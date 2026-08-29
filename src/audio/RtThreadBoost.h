@@ -16,4 +16,4 @@
 //   Windows - no-op for now (QoS via MMCSS is a later phase).
 //
 // RT-safe: called once, only pthread/mach syscalls, no allocation, no locks.
-bool BoostCurrentThreadForRt() noexcept;
+bool boostCurrentThreadForRt() noexcept;

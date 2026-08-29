@@ -45,6 +45,14 @@ WHITELIST = {
     "memset",
     "memcmp",
     "__stack_chk_fail",
+    "_stack_chk_fail",
+    "stack_chk_fail",
+    "__memcpy_chk",
+    "_memcpy_chk",
+    "memcpy_chk",
+    "__memset_chk",
+    "_memset_chk",
+    "memset_chk",
     "mach_task_self_",
     "mach_thread_self",
     "thread_policy_set",
@@ -73,9 +81,14 @@ def parse_undefined_symbols(object_file: str) -> list[str]:
         for i, tok in enumerate(tokens):
             if tok in ("U", "u") and i + 1 < len(tokens):
                 symbol = tokens[i + 1]
-                # Strip the leading '_' that mach-o adds to C symbols.
-                if symbol.startswith("_") and not symbol.startswith("__Z"):
-                    symbol = symbol[1:]
+                # Normalize the leading underscore(s) that the platform's
+                # toolchain adds to C symbols. mach-o/ELF prefix one '_';
+                # glibc's stack-protector/fortify can add more ('__stack_chk_fail').
+                # C++ mangled names start with '_Z' (e.g. '_Znwm' for operator
+                # new) and must keep their leading underscore so the forbidden
+                # patterns still match, so leave those alone.
+                if not symbol.startswith("_Z"):
+                    symbol = symbol.lstrip("_")
                 symbols.append(symbol)
                 break
     return symbols

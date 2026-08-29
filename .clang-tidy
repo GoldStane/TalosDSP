@@ -3,6 +3,7 @@
 Checks:
   - '-*'
   - 'bugprone-*'
+  - '-bugprone-easily-swappable-parameters'
   - 'clang-analyzer-*'
   - 'performance-*'
   - 'modernize-use-nullptr'
@@ -21,3 +22,5 @@ CheckOptions:
     value: camelBack
   - key: readability-identifier-naming.EnumCase
     value: CamelCase
+  - key: readability-identifier-naming.IgnoringTrailingUnderscores
+    value: true

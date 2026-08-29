@@ -55,7 +55,7 @@ class AudioEngine {
   static std::vector<DeviceInfo> listDevices();
 
  private:
-  static int PaCallback(const void* input, void* output,
+  static int paCallback(const void* input, void* output,
                         unsigned long frameCount,
                         const PaStreamCallbackTimeInfo* timeInfo,
                         PaStreamCallbackFlags flags, void* userData);

@@ -91,7 +91,7 @@ bool AudioEngine::open(Config& config) {
 
   const PaError err = Pa_OpenStream(
       &stream_, input, output, sampleRate, config.framesPerBuffer,
-      paNoFlag, &AudioEngine::PaCallback, this);
+      paNoFlag, &AudioEngine::paCallback, this);
   if (err != kPaNoError) {
     lastError_ = Pa_GetErrorText(err);
     stream_ = nullptr;
@@ -134,7 +134,7 @@ void AudioEngine::close() {
   stream_ = nullptr;
 }
 
-int AudioEngine::PaCallback(const void* input, void* output,
+int AudioEngine::paCallback(const void* input, void* output,
                             unsigned long frameCount,
                             const PaStreamCallbackTimeInfo* /*timeInfo*/,
                             PaStreamCallbackFlags flags, void* userData) {
@@ -147,7 +147,7 @@ int AudioEngine::callbackRun(const void* input, void* output,
                              PaStreamCallbackFlags flags) {
   static thread_local bool boosted = false;
   if (!boosted) {
-    boosted = BoostCurrentThreadForRt();
+    boosted = boostCurrentThreadForRt();
     rtBoostApplied_.store(boosted, std::memory_order_relaxed);
   }
 

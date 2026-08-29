@@ -20,7 +20,7 @@ std::uint64_t nsToTicks(double ns) {
 }
 }  // namespace
 
-bool BoostCurrentThreadForRt() noexcept {
+bool boostCurrentThreadForRt() noexcept {
   // QoS first: marks the thread as user-interactive for the scheduler and
   // for any mach work done through XPC/servers.
   pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
@@ -46,7 +46,7 @@ bool BoostCurrentThreadForRt() noexcept {
 #include <pthread.h>
 #include <sched.h>
 
-bool BoostCurrentThreadForRt() noexcept {
+bool boostCurrentThreadForRt() noexcept {
   sched_param sp{};
   sp.sched_priority = 80;
   return pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp) == 0;
@@ -54,6 +54,6 @@ bool BoostCurrentThreadForRt() noexcept {
 
 #else
 
-bool BoostCurrentThreadForRt() noexcept { return false; }
+bool boostCurrentThreadForRt() noexcept { return false; }
 
 #endif

@@ -1,9 +1,10 @@
 name: CI
 
+# CI is intentionally disabled from auto-running until the repo goes public.
+# Re-enable by restoring the `on:` block below (or run manually via
+# `gh workflow run ci.yml`). The failing-email noise isn't worth it pre-release.
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   build:
