@@ -10,12 +10,12 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done
 
 Goal: a running, pinned, real-time-safe audio thread that does nothing but loopback input to output.
 
-- [ ] CMake project (`CMakeLists.txt`, `FetchContent` for PortAudio, optional vcpkg toolchain file)
-- [ ] MIT `LICENSE` at repo root
-- [ ] Real-time audio thread: PortAudio callback wired to a dedicated pinned thread with `SCHED_FIFO` (Linux) / equivalent QoS (macOS/Windows)
-- [ ] Pure passthrough (input → output, no processing) to validate zero xruns at target block size
-- [ ] GitHub Actions CI: build matrix (Linux + macOS), clang-tidy pass, sanitizer build (ASan/UBSan) on non-RT test code
-- [ ] `tools/rt-safety/`: clang-tidy check or sanitizer harness that flags allocation/locking reachable from the audio callback
+- [x] CMake project (`CMakeLists.txt`, `FetchContent` for PortAudio, optional vcpkg toolchain file)
+- [x] MIT `LICENSE` at repo root
+- [x] Real-time audio thread: PortAudio callback wired to a dedicated pinned thread with `SCHED_FIFO` (Linux) / equivalent QoS (macOS/Windows)
+- [x] Pure passthrough (input → output, no processing) to validate zero xruns at target block size
+- [x] GitHub Actions CI: build matrix (Linux + macOS), clang-tidy pass, sanitizer build (ASan/UBSan) on non-RT test code
+- [x] `tools/rt-safety/`: clang-tidy check or sanitizer harness that flags allocation/locking reachable from the audio callback
 
 **Exit criteria:** passthrough build runs glitch-free for 10+ minutes at 64-sample blocks on reference hardware.
 

@@ -51,18 +51,26 @@ One real-time thread owns the entire signal chain sequentially, so the audio pat
 
 ## Status
 
-Early development. See `ROADMAP.md` for the phased build plan (skeleton → DSP stages → control plane → classifier → benchmarking/proof).
+Phase 0 (skeleton) landed: a glitch-free passthrough at 64-sample blocks with a pinned real-time thread, per-flag xrun counters, a CI matrix (Linux + macOS), and a `tools/rt-safety/` harness that fails the build if the audio callback could allocate or lock. See `ROADMAP.md` for the phased build plan (skeleton → DSP stages → control plane → classifier → benchmarking/proof).
 
 ## Building
 
 ```bash
-git clone https://github.com/<you>/TalosDSP.git
+git clone https://github.com/GoldStane/TalosDSP.git
 cd TalosDSP
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
 Requires a C++17 compiler and PortAudio (fetched automatically via CMake `FetchContent` if not found on the system).
+
+Validate the passthrough (exit code 0 iff zero steady-state xruns):
+
+```bash
+cmake --build build --target check     # unit tests + rt-safety harness
+./build/talosdsp_passthrough --duration 600 --blocksize 64 --sr 48000
+./build/talosdsp_passthrough --list    # enumerate audio devices
+```
 
 ## License
 

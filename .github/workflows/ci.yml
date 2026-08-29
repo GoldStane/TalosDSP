@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    name: build-and-test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux audio deps
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j
+
+      - name: Unit tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: rt-safety symbol check
+        run: cmake --build build --target rt_safety_check
+
+      - name: Configure (sanitizers)
+        run: |
+          cmake -B build-asan -DCMAKE_BUILD_TYPE=Debug \
+            -DTALOSDSP_SANITIZE=ON -DTALOSDSP_BUILD_RTSAFETY=OFF
+
+      - name: Build (sanitizers)
+        run: cmake --build build-asan -j
+
+      - name: Unit tests (sanitizers)
+        run: ctest --test-dir build-asan --output-on-failure
+
+  clang-tidy:
+    name: clang-tidy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev clang-tidy clang-tools
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Run clang-tidy
+        run: |
+          cmake --build build -j --target talos_rt talosdsp_passthrough talosdsp_tests
+          run-clang-tidy -p build -header-filter='^.*/src/.*' -quiet \
+            src/main.cpp src/audio/
