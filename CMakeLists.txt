@@ -66,6 +66,11 @@ add_library(talos_rt OBJECT
   src/audio/PassthroughCallback.cpp
   src/audio/XrunCounter.cpp
   src/audio/RtThreadBoost.cpp
+  src/audio/StageHistogram.cpp
+  src/audio/FreeverbStage.cpp
+  src/audio/MixerStage.cpp
+  src/audio/LimiterStage.cpp
+  src/audio/DspChain.cpp
 )
 set_target_properties(talos_rt PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(talos_rt PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -87,12 +92,12 @@ if(TALOSDSP_BUILD_RTSAFETY)
 endif()
 
 # ---- application ----
-add_executable(talosdsp_passthrough
+add_executable(talosdsp
   src/main.cpp
   src/audio/AudioEngine.cpp
 )
-target_include_directories(talosdsp_passthrough PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(talosdsp_passthrough PRIVATE talos_rt portaudio_static)
+target_include_directories(talosdsp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(talosdsp PRIVATE talos_rt portaudio_static)
 
 # ---- tests ----
 if(TALOSDSP_BUILD_TESTS)
@@ -107,6 +112,11 @@ if(TALOSDSP_BUILD_TESTS)
   add_executable(talosdsp_tests
     tests/test_xruncounter.cpp
     tests/test_callback.cpp
+    tests/test_histogram.cpp
+    tests/test_freeverb.cpp
+    tests/test_limiter.cpp
+    tests/test_mixer.cpp
+    tests/test_chain.cpp
   )
   target_include_directories(talosdsp_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
   target_link_libraries(talosdsp_tests PRIVATE talos_rt Catch2::Catch2WithMain)

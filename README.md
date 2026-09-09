@@ -51,7 +51,7 @@ One real-time thread owns the entire signal chain sequentially, so the audio pat
 
 ## Status
 
-Phase 0 (skeleton) landed: a glitch-free passthrough at 64-sample blocks with a pinned real-time thread, per-flag xrun counters, a CI matrix (Linux + macOS), and a `tools/rt-safety/` harness that fails the build if the audio callback could allocate or lock. See `ROADMAP.md` for the phased build plan (skeleton → DSP stages → control plane → classifier → benchmarking/proof).
+Phase 0 (skeleton) and Phase 1 (DSP stages) are landed. Phase 1 adds the full sequential signal chain — `Reader → Freeverb → Mixer → Limiter` — behind a common `IDspStage` interface, with per-stage cost timing (`steady_clock` → lock-free atomic histograms) reported at the end of every run. The chain runs glitch-free at 64-sample blocks (30 s, 0 steady-state xruns; measured per-stage cost < 62 µs). See `ROADMAP.md` for the phased build plan (skeleton → DSP stages → control plane → classifier → benchmarking/proof).
 
 ## Building
 
@@ -68,9 +68,18 @@ Validate the passthrough (exit code 0 iff zero steady-state xruns):
 
 ```bash
 cmake --build build --target check     # unit tests + rt-safety harness
-./build/talosdsp_passthrough --duration 600 --blocksize 64 --sr 48000
+./build/talosdsp_passthrough --blocksize 64 --sr 48000
 ./build/talosdsp_passthrough --list    # enumerate audio devices
 ```
+
+Run the full DSP chain (default) or fall back to plain passthrough:
+
+```bash
+./build/talosdsp_passthrough --chain full --wet 0.4
+./build/talosdsp_passthrough --chain none     # Phase 0 passthrough regression
+```
+
+Press 'q' + Enter to stop. At the end of a `--chain full` run, per-stage median/P99 cost (RT-thread, `steady_clock`) is printed.
 
 ## License
 

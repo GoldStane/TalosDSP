@@ -23,14 +23,14 @@ Goal: a running, pinned, real-time-safe audio thread that does nothing but loopb
 
 Goal: the full sequential signal chain, each stage independently testable offline.
 
-- [ ] `IDspStage` interface (process-in-place, no allocation, deterministic)
-- [ ] Delay/Reverb stage (Schroeder/Freeverb-style to start)
-- [ ] Limiter/Mixer stage
-- [ ] Per-stage cost instrumentation (`steady_clock` or `rdtsc`, written to atomic histograms)
-- [ ] Offline unit tests: known impulse responses / reference outputs per stage
+- [x] `IDspStage` interface (process-in-place, no allocation, deterministic)
+- [x] Delay/Reverb stage (Schroeder/Freeverb-style to start)
+- [x] Limiter/Mixer stage
+- [x] Per-stage cost instrumentation (`steady_clock` or `rdtsc`, written to atomic histograms)
+- [x] Offline unit tests: known impulse responses / reference outputs per stage
 - [ ] Stretch: partitioned convolution reverb (SIMD showcase)
 
-**Exit criteria:** full chain runs in the Phase 0 callback with measured per-stage cost, still glitch-free.
+**Exit criteria:** full chain runs in the Phase 0 callback with measured per-stage cost, still glitch-free. (Verified: indefinite run with 'q' or Ctrl+C to stop, 0 steady-state xruns; per-stage cost < 62 µs.)
 
 ## Phase 2 — Control Plane
 

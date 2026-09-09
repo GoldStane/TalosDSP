@@ -37,13 +37,47 @@ bool AudioEngine::open(Config& config) {
     return false;
   }
 
-  const PaDeviceIndex inputDevice =
-      config.deviceIndex >= 0 ? config.deviceIndex : Pa_GetDefaultInputDevice();
-  const PaDeviceIndex outputDevice =
-      config.deviceIndex >= 0 ? config.deviceIndex : Pa_GetDefaultOutputDevice();
+  // Resolve input device: prefer explicit inputDeviceIndex, then legacy deviceIndex, then default
+  PaDeviceIndex inputDevice = paNoDevice;
+  if (config.inputDeviceIndex >= 0) {
+    inputDevice = config.inputDeviceIndex;
+  } else if (config.deviceIndex >= 0) {
+    inputDevice = config.deviceIndex;
+  } else {
+    inputDevice = Pa_GetDefaultInputDevice();
+  }
+
+  // Resolve output device: prefer explicit outputDeviceIndex, then legacy deviceIndex, then default
+  PaDeviceIndex outputDevice = paNoDevice;
+  if (config.outputDeviceIndex >= 0) {
+    outputDevice = config.outputDeviceIndex;
+  } else if (config.deviceIndex >= 0) {
+    outputDevice = config.deviceIndex;
+  } else {
+    outputDevice = Pa_GetDefaultOutputDevice();
+  }
+
   if (inputDevice == paNoDevice && outputDevice == paNoDevice) {
     lastError_ = "no input or output device available";
     return false;
+  }
+
+  // Validate input device supports requested channels
+  if (inputDevice != paNoDevice) {
+    const PaDeviceInfo* info = Pa_GetDeviceInfo(inputDevice);
+    if (info == nullptr || info->maxInputChannels < config.channels) {
+      lastError_ = "input device does not support requested channel count";
+      return false;
+    }
+  }
+
+  // Validate output device supports requested channels
+  if (outputDevice != paNoDevice) {
+    const PaDeviceInfo* info = Pa_GetDeviceInfo(outputDevice);
+    if (info == nullptr || info->maxOutputChannels < config.channels) {
+      lastError_ = "output device does not support requested channel count";
+      return false;
+    }
   }
 
   int sampleRate = config.sampleRate;
@@ -159,10 +193,17 @@ int AudioEngine::callbackRun(const void* input, void* output,
       std::chrono::steady_clock::now() - firstCallbackAt_ <
       std::chrono::milliseconds(config_.startupGraceMs);
 
-  passthrough_.process(static_cast<const float*>(input),
-                       static_cast<float*>(output),
-                       static_cast<unsigned int>(frameCount),
-                       static_cast<unsigned int>(config_.channels));
+  if (config_.useChain) {
+    chain_.process(static_cast<const float*>(input),
+                   static_cast<float*>(output),
+                   static_cast<unsigned int>(frameCount),
+                   static_cast<unsigned int>(config_.channels));
+  } else {
+    passthrough_.process(static_cast<const float*>(input),
+                         static_cast<float*>(output),
+                         static_cast<unsigned int>(frameCount),
+                         static_cast<unsigned int>(config_.channels));
+  }
 
   xruns_.record((flags & paInputOverflow) != 0, (flags & paOutputUnderflow) != 0,
                 (flags & paInputUnderflow) != 0, (flags & paOutputOverflow) != 0,

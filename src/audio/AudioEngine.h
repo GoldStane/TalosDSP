@@ -1,5 +1,6 @@
 #pragma once
 
+#include "audio/DspChain.h"
 #include "audio/PassthroughCallback.h"
 #include "audio/XrunCounter.h"
 
@@ -18,8 +19,10 @@
 class AudioEngine {
  public:
   struct Config {
-    int deviceIndex = -1;            // -1 => default input/output device
-    int sampleRate = 0;              // 0 => device's native default sample rate
+    int inputDeviceIndex = -1;   // -1 => default input device
+    int outputDeviceIndex = -1;  // -1 => default output device
+    int deviceIndex = -1;        // Legacy: if set, used for both input/output (requires full-duplex)
+    int sampleRate = 0;          // 0 => device's native default sample rate
     unsigned long framesPerBuffer = 64;
     int channels = 1;
     double suggestedLatency = 0.0;   // 0 => framesPerBuffer / sampleRate
@@ -27,6 +30,7 @@ class AudioEngine {
     // as start-up transients (CoreAudio input overflow on first block) and
     // excluded from the steady-state count the exit criteria is judged on.
     int startupGraceMs = 500;
+    bool useChain = true;  // false => plain passthrough (Phase 0 regression)
   };
 
   struct DeviceInfo {
@@ -50,6 +54,9 @@ class AudioEngine {
   const XrunCounter& xruns() const noexcept { return xruns_; }
   XrunCounter& xruns() noexcept { return xruns_; }
 
+  const DspChain& chain() const noexcept { return chain_; }
+  DspChain& chain() noexcept { return chain_; }
+
   std::string lastError() const noexcept { return lastError_; }
 
   static std::vector<DeviceInfo> listDevices();
@@ -65,6 +72,7 @@ class AudioEngine {
 
   PaStream* stream_ = nullptr;
   Config config_;
+  DspChain chain_;
   PassthroughCallback passthrough_;
   XrunCounter xruns_;
   std::atomic<bool> rtBoostApplied_{false};

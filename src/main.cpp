@@ -5,35 +5,52 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <csignal>
 #include <string>
 #include <thread>
+#include <sys/select.h>
+#include <unistd.h>
+
+static std::atomic<bool> g_stopRequested{false};
+
+static void signalHandler(int) {
+  g_stopRequested = true;
+}
 
 namespace {
 
 struct Options {
-  int deviceIndex = -1;
+  int deviceIndex = -1;          // Legacy: used for both input and output
+  int inputDeviceIndex = -1;     // Input device index (preferred)
+  int outputDeviceIndex = -1;    // Output device index (preferred)
   int sampleRate = 0;
   int framesPerBuffer = 64;
   int channels = 1;
-  int durationSeconds = 600;
   int statusIntervalSeconds = 10;
+  bool useChain = true;          // false => plain passthrough (Phase 0 mode)
+  float wet = -1.0f;             // -1 => mixer default (0.5)
 };
 
 void usage(const char* argv0) {
   std::printf(
       "Usage: %s [options]\n"
       "\n"
-      "  --device N             device index (see --list). Default: default\n"
-      "                         input/output device.\n"
+      "  --device N             device index for BOTH input and output (see --list).\n"
+      "                         Requires full-duplex device. Default: default devices.\n"
+      "  --input-device N       input device index (see --list). Overrides --device.\n"
+      "  --output-device N      output device index (see --list). Overrides --device.\n"
       "  --blocksize N          frames per buffer (default 64)\n"
       "  --sr N                 sample rate Hz (default: device native rate)\n"
       "  --channels N           channels (default 1)\n"
-      "  --duration N           run for N seconds (default 600)\n"
       "  --status-interval N    print status every N seconds (default 10)\n"
+      "  --chain none|full      DSP chain: 'full' (Reader->Reverb->Mixer->\n"
+      "                         Limiter) or 'none' (plain passthrough). "
+      "Default full.\n"
+      "  --wet N                reverb wet mix 0..1 (default 0.5)\n"
       "  --list                 list audio devices and exit\n"
       "  --help                 this message\n"
       "\n"
-      "Exit code is 0 iff the run completes with zero xruns.\n",
+      "Press 'q' + Enter to stop. Exit code is 0 on clean stop.\n",
       argv0);
 }
 
@@ -44,6 +61,16 @@ bool parseInt(const char* s, int& out) {
     return false;
   }
   out = static_cast<int>(v);
+  return true;
+}
+
+bool parseFloat(const char* s, float& out) {
+  char* end = nullptr;
+  const float v = std::strtof(s, &end);
+  if (end == s || *end != '\0') {
+    return false;
+  }
+  out = v;
   return true;
 }
 
@@ -60,6 +87,14 @@ bool parseOptions(int argc, char** argv, Options& opts, bool& listOnly) {
       if (!parseInt(argv[++i], opts.deviceIndex) || opts.deviceIndex < 0) {
         return false;
       }
+    } else if (arg == "--input-device" && i + 1 < argc) {
+      if (!parseInt(argv[++i], opts.inputDeviceIndex) || opts.inputDeviceIndex < 0) {
+        return false;
+      }
+    } else if (arg == "--output-device" && i + 1 < argc) {
+      if (!parseInt(argv[++i], opts.outputDeviceIndex) || opts.outputDeviceIndex < 0) {
+        return false;
+      }
     } else if (arg == "--blocksize" && i + 1 < argc) {
       if (!parseInt(argv[++i], opts.framesPerBuffer) || opts.framesPerBuffer <= 0) {
         return false;
@@ -72,13 +107,15 @@ bool parseOptions(int argc, char** argv, Options& opts, bool& listOnly) {
       if (!parseInt(argv[++i], opts.channels) || opts.channels <= 0) {
         return false;
       }
-    } else if (arg == "--duration" && i + 1 < argc) {
-      if (!parseInt(argv[++i], opts.durationSeconds) || opts.durationSeconds <= 0) {
-        return false;
-      }
     } else if (arg == "--status-interval" && i + 1 < argc) {
       if (!parseInt(argv[++i], opts.statusIntervalSeconds) ||
           opts.statusIntervalSeconds <= 0) {
+        return false;
+      }
+    } else if (arg == "--chain" && i + 1 < argc) {
+      opts.useChain = (std::string(argv[++i]) != "none");
+    } else if (arg == "--wet" && i + 1 < argc) {
+      if (!parseFloat(argv[++i], opts.wet)) {
         return false;
       }
     } else {
@@ -126,10 +163,13 @@ int main(int argc, char** argv) {
 
   AudioEngine::Config config;
   config.deviceIndex = opts.deviceIndex;
+  config.inputDeviceIndex = opts.inputDeviceIndex;
+  config.outputDeviceIndex = opts.outputDeviceIndex;
   config.sampleRate = opts.sampleRate;
   config.framesPerBuffer =
       static_cast<unsigned long>(opts.framesPerBuffer);
   config.channels = opts.channels;
+  config.useChain = opts.useChain;
 
   AudioEngine engine;
   if (!engine.open(config)) {
@@ -138,12 +178,17 @@ int main(int argc, char** argv) {
     Pa_Terminate();
     return 1;
   }
+  if (opts.useChain && opts.wet >= 0.0f) {
+    engine.chain().mixer().setWet(opts.wet);
+  }
 
-  std::printf("TalosDSP passthrough: %d Hz, %lu frames/block (%0.2f ms), %d ch\n",
-              config.sampleRate, config.framesPerBuffer,
-              static_cast<double>(config.framesPerBuffer) / config.sampleRate *
-                  1000.0,
-              config.channels);
+  std::printf(
+      "TalosDSP %s: %d Hz, %lu frames/block (%0.2f ms), %d ch\n",
+      opts.useChain ? "chain(reverb)"
+                    : "passthrough",
+      config.sampleRate, config.framesPerBuffer,
+      static_cast<double>(config.framesPerBuffer) / config.sampleRate * 1000.0,
+      config.channels);
 
   if (!engine.start()) {
     std::fprintf(stderr, "Failed to start stream: %s\n",
@@ -153,12 +198,17 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  // Install signal handlers for graceful shutdown
+  std::signal(SIGINT, signalHandler);   // Ctrl+C
+  std::signal(SIGTERM, signalHandler);  // kill command
+
   using clock = std::chrono::steady_clock;
   const auto start = clock::now();
-  const auto deadline = start + std::chrono::seconds(opts.durationSeconds);
   auto nextStatus = start + std::chrono::seconds(opts.statusIntervalSeconds);
 
-  while (clock::now() < deadline) {
+  bool stopRequested = false;
+
+  while (!stopRequested && !g_stopRequested) {
     if (clock::now() >= nextStatus) {
       const auto elapsed =
           std::chrono::duration_cast<std::chrono::seconds>(clock::now() - start)
@@ -181,21 +231,53 @@ int main(int argc, char** argv) {
       nextStatus += std::chrono::seconds(opts.statusIntervalSeconds);
       std::fflush(stdout);
     }
+
+    // Check for stdin input (press 'q' + Enter to stop)
+    fd_set readfds;
+    FD_ZERO(&readfds);
+    FD_SET(STDIN_FILENO, &readfds);
+    struct timeval tv = {0, 100000};  // 100ms timeout
+    int ret = select(STDIN_FILENO + 1, &readfds, nullptr, nullptr, &tv);
+    if (ret > 0 && FD_ISSET(STDIN_FILENO, &readfds)) {
+      char c;
+      if (read(STDIN_FILENO, &c, 1) > 0 && (c == 'q' || c == 'Q')) {
+        stopRequested = true;
+      }
+    }
+    stopRequested = stopRequested || g_stopRequested.load();
+
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 
   engine.stop();
   engine.close();
 
+  const auto elapsedSec = std::chrono::duration_cast<std::chrono::seconds>(clock::now() - start).count();
   const auto steady = engine.xruns().steadyTotal();
   const auto total = engine.xruns().total();
-  std::printf("done after %d s: %llu steady-state xruns "
+  std::printf("done after %lld s: %llu steady-state xruns "
               "(%llu including startup transient)\n",
-              opts.durationSeconds,
+              static_cast<long long>(elapsedSec),
               static_cast<unsigned long long>(steady),
               static_cast<unsigned long long>(total));
+
+  if (opts.useChain) {
+    auto printHist = [](const char* name, const StageHistogram& h) {
+      if (h.total() == 0) return;
+      std::printf("    %-9s median=%llu ns  p99=%llu ns  (n=%llu)\n", name,
+                  static_cast<unsigned long long>(h.medianNs()),
+                  static_cast<unsigned long long>(h.p99Ns()),
+                  static_cast<unsigned long long>(h.total()));
+    };
+    std::printf("per-stage cost (RT thread, steady_clock):\n");
+    auto& ch = engine.chain();
+    printHist("Reader", ch.reader().histogram());
+    printHist("Freeverb", ch.reverb().histogram());
+    printHist("Mixer", ch.mixer().histogram());
+    printHist("Limiter", ch.limiter().histogram());
+  }
   std::fflush(stdout);
 
   Pa_Terminate();
-  return steady == 0 ? 0 : 1;
+  return 0;
 }
