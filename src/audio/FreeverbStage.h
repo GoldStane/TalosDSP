@@ -27,6 +27,9 @@ class FreeverbStage : public IDspStage {
 
   StageHistogram& histogram() noexcept override { return hist_; }
 
+  void setComplexity(uint8_t level) noexcept override;
+  uint8_t getComplexity() const noexcept override { return complexity_; }
+
  private:
   struct Model {
     static constexpr int kNumCombs = 4;
@@ -54,4 +57,5 @@ class FreeverbStage : public IDspStage {
   static constexpr int kMaxChannels = 2;
   std::array<Model, kMaxChannels> models_{};
   StageHistogram hist_;
+  uint8_t complexity_{128};
 };

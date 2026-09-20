@@ -29,6 +29,12 @@ struct Options {
   int statusIntervalSeconds = 10;
   bool useChain = true;          // false => plain passthrough (Phase 0 mode)
   float wet = -1.0f;             // -1 => mixer default (0.5)
+  // Phase 2: watchdog / complexity
+  bool watchdogEnabled = true;
+  int manualComplexity = -1;     // -1 = auto (watchdog), 0-255 = manual
+  float pidKp = 0.5f;
+  float pidKi = 0.01f;
+  float pidKd = 0.1f;
 };
 
 void usage(const char* argv0) {
@@ -47,6 +53,11 @@ void usage(const char* argv0) {
       "                         Limiter) or 'none' (plain passthrough). "
       "Default full.\n"
       "  --wet N                reverb wet mix 0..1 (default 0.5)\n"
+      "  --watchdog on|off      enable PID watchdog (default on)\n"
+      "  --complexity N         manual complexity 0-255 (default auto)\n"
+      "  --pid-kp N             PID proportional gain (default 0.5)\n"
+      "  --pid-ki N             PID integral gain (default 0.01)\n"
+      "  --pid-kd N             PID derivative gain (default 0.1)\n"
       "  --list                 list audio devices and exit\n"
       "  --help                 this message\n"
       "\n"
@@ -118,6 +129,19 @@ bool parseOptions(int argc, char** argv, Options& opts, bool& listOnly) {
       if (!parseFloat(argv[++i], opts.wet)) {
         return false;
       }
+    } else if (arg == "--watchdog" && i + 1 < argc) {
+      opts.watchdogEnabled = (std::string(argv[++i]) != "off");
+    } else if (arg == "--complexity" && i + 1 < argc) {
+      if (!parseInt(argv[++i], opts.manualComplexity) ||
+          opts.manualComplexity < 0 || opts.manualComplexity > 255) {
+        return false;
+      }
+    } else if (arg == "--pid-kp" && i + 1 < argc) {
+      if (!parseFloat(argv[++i], opts.pidKp)) return false;
+    } else if (arg == "--pid-ki" && i + 1 < argc) {
+      if (!parseFloat(argv[++i], opts.pidKi)) return false;
+    } else if (arg == "--pid-kd" && i + 1 < argc) {
+      if (!parseFloat(argv[++i], opts.pidKd)) return false;
     } else {
       return false;
     }
@@ -198,6 +222,18 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  // Phase 2: Watchdog / complexity setup
+  if (opts.useChain) {
+    if (opts.manualComplexity >= 0) {
+      engine.chain().setManualComplexity(static_cast<uint8_t>(opts.manualComplexity));
+      engine.chain().setWatchdogEnabled(false);
+    } else if (opts.watchdogEnabled) {
+      engine.chain().setPIDGains(opts.pidKp, opts.pidKi, opts.pidKd);
+      engine.chain().setWatchdogEnabled(true);
+      engine.chain().startWatchdog();
+    }
+  }
+
   // Install signal handlers for graceful shutdown
   std::signal(SIGINT, signalHandler);   // Ctrl+C
   std::signal(SIGTERM, signalHandler);  // kill command
@@ -249,6 +285,9 @@ int main(int argc, char** argv) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 
+  if (opts.useChain) {
+    engine.chain().stopWatchdog();
+  }
   engine.stop();
   engine.close();
 

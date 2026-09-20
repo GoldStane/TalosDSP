@@ -1,5 +1,6 @@
 #include "audio/FreeverbStage.h"
 
+#include <algorithm>
 #include <cstddef>
 
 namespace {
@@ -51,6 +52,19 @@ void FreeverbStage::Model::resetState() noexcept {
 }
 
 FreeverbStage::FreeverbStage() = default;
+
+void FreeverbStage::setComplexity(uint8_t level) noexcept {
+  float t = level / 255.0f;
+  // Feedback: 0.70 -> 0.95
+  // Damping: 0.40 -> 0.10 (less damping = brighter tail)
+  // Allpass gain: 0.50 -> 0.70
+  for (auto& m : models_) {
+    m.feedback = 0.70f + t * 0.25f;
+    m.damping = 0.40f - t * 0.30f;
+    m.allpassG = 0.50f + t * 0.20f;
+  }
+  complexity_ = level;
+}
 
 void FreeverbStage::process(const float* input, float* output,
                             uint32_t frames, uint32_t channels) noexcept {

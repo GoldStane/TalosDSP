@@ -25,7 +25,11 @@ class PassthroughCallback : public IDspStage {
 
   StageHistogram& histogram() noexcept override { return hist_; }
 
+  void setComplexity(uint8_t level) noexcept override { complexity_ = level; }
+  uint8_t getComplexity() const noexcept override { return complexity_; }
+
  private:
   std::uint32_t channels_ = 0;
   StageHistogram hist_;
+  uint8_t complexity_{128};
 };

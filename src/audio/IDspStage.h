@@ -9,6 +9,8 @@
 //   - reset(): clear internal state (RT-safe, no allocation)
 //   - name(): for telemetry
 //   - histogram(): this stage's per-call cost, written from the RT thread
+//   - setComplexity(level): continuous 0-255 complexity control
+//   - getComplexity(): current complexity level
 //
 // Virtual dispatch is RT-safe (no allocation, no locking). Stages must never
 // allocate, lock, or block in any method reachable from the audio callback.
@@ -24,4 +26,7 @@ class IDspStage {
   virtual const char* name() const noexcept = 0;
 
   virtual StageHistogram& histogram() noexcept = 0;
+
+  virtual void setComplexity(uint8_t level) noexcept = 0;
+  virtual uint8_t getComplexity() const noexcept = 0;
 };

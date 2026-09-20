@@ -8,6 +8,9 @@
 // Dry/wet crossfade between the original (dry) signal and the reverb (wet)
 // output. The chain calls mix(dry, wet, out, ...); process(in, out, ...) is the
 // IDspStage adaptation (wet == dry) used for uniform testing.
+//
+// Complexity mapping (0-255):
+//   Crossfade curve: linear (t=0) -> equal-power cosine (t=1)
 class MixerStage : public IDspStage {
  public:
   MixerStage() = default;
@@ -25,6 +28,9 @@ class MixerStage : public IDspStage {
   }
   float wetAmount() const noexcept { return wetAmount_; }
 
+  void setComplexity(uint8_t level) noexcept override;
+  uint8_t getComplexity() const noexcept override { return complexity_; }
+
   void reset() noexcept override {}
 
   const char* name() const noexcept override { return "Mixer"; }
@@ -34,4 +40,6 @@ class MixerStage : public IDspStage {
  private:
   float wetAmount_ = 0.5f;
   StageHistogram hist_;
+  float crossfade_mode_{0.0f};  // 0 = linear, 1 = equal-power
+  uint8_t complexity_{128};
 };

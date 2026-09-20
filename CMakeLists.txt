@@ -71,6 +71,7 @@ add_library(talos_rt OBJECT
   src/audio/MixerStage.cpp
   src/audio/LimiterStage.cpp
   src/audio/DspChain.cpp
+  src/audio/ComplexityController.cpp
 )
 set_target_properties(talos_rt PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(talos_rt PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
