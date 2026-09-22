@@ -13,9 +13,8 @@
 #include <vector>
 
 // Owns the PortAudio stream lifecycle. Lives off the RT thread: everything
-// here may allocate and block freely. The RT code (PassthroughCallback,
-// XrunCounter, RtThreadBoost) is separate and lives in the talos_rt library
-// which the rt-safety harness audits.
+// lifecycle methods may allocate and block. The callback implementation lives
+// in AudioCallback.cpp, inside the audited talos_rt library.
 class AudioEngine {
  public:
   struct Config {
@@ -70,6 +69,7 @@ class AudioEngine {
   int callbackRun(const void* input, void* output, unsigned long frameCount,
                   PaStreamCallbackFlags flags);
 
+  bool boostAttempted_{false};  // Only the callback touches this while running.
   PaStream* stream_ = nullptr;
   Config config_;
   DspChain chain_;

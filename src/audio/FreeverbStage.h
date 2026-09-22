@@ -30,6 +30,11 @@ class FreeverbStage : public IDspStage {
   void setComplexity(uint8_t level) noexcept override;
   uint8_t getComplexity() const noexcept override { return complexity_; }
 
+  // Preset setters
+  void setFeedback(float f) noexcept { for (auto& m : models_) m.feedback = f; }
+  void setDamping(float d) noexcept { for (auto& m : models_) m.damping = d; }
+  void setAllpassG(float g) noexcept { for (auto& m : models_) m.allpassG = g; }
+
  private:
   struct Model {
     static constexpr int kNumCombs = 4;
@@ -45,6 +50,7 @@ class FreeverbStage : public IDspStage {
     std::array<int, kNumAllpass> apLen{556, 441};
     std::array<int, kNumAllpass> apIdx{};
 
+    int activeCombs = 4;
     float feedback = 0.84f;
     float damping = 0.2f;
     float allpassG = 0.6f;

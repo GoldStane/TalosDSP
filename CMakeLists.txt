@@ -12,7 +12,7 @@ endif()
 
 option(TALOSDSP_BUILD_TESTS "Build unit tests" ON)
 option(TALOSDSP_BUILD_RTSAFETY "Build the rt-safety symbol check harness" ON)
-option(TALOSDSP_SANITIZE "Build non-RT code with AddressSanitizer + UBSan" OFF)
+option(TALOSDSP_SANITIZE "Build with AddressSanitizer + UBSan (offline validation)" OFF)
 
 # PortAudio's CMakeLists declares cmake_minimum_required(2.8), which CMake >= 4
 # rejects unless we tell it how far back compatibility is allowed to go.
@@ -31,7 +31,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang|GNU")
   add_compile_options(-Wshadow -Wconversion -Wno-sign-conversion)
 endif()
 
-# ---- sanitizers (non-RT code only) ----
+# ---- sanitizers (offline validation, disable the RT symbol audit) ----
 if(TALOSDSP_SANITIZE)
   add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
   add_link_options(-fsanitize=address,undefined)
@@ -63,6 +63,7 @@ FetchContent_MakeAvailable(portaudio)
 
 # ---- real-time core: everything reachable from the audio callback ----
 add_library(talos_rt OBJECT
+  src/audio/AudioCallback.cpp
   src/audio/PassthroughCallback.cpp
   src/audio/XrunCounter.cpp
   src/audio/RtThreadBoost.cpp
@@ -71,10 +72,23 @@ add_library(talos_rt OBJECT
   src/audio/MixerStage.cpp
   src/audio/LimiterStage.cpp
   src/audio/DspChain.cpp
-  src/audio/ComplexityController.cpp
+  src/audio/Biquad.cpp
+  src/audio/Filterbank.cpp
+  src/audio/FeatureExtractor.cpp
 )
+add_library(talos_control STATIC
+  src/audio/DspChainControl.cpp
+  src/audio/ComplexityController.cpp
+  src/audio/Classifier.cpp
+)
+target_include_directories(talos_control PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+find_package(Threads REQUIRED)
+target_link_libraries(talos_control PUBLIC Threads::Threads)
+target_compile_options(talos_rt PRIVATE -fno-exceptions)
+
 set_target_properties(talos_rt PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(talos_rt PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(talos_rt PRIVATE portaudio_static)
 
 # ---- rt-safety symbol check (Phase 0 harness) ----
 if(TALOSDSP_BUILD_RTSAFETY)
@@ -88,8 +102,7 @@ if(TALOSDSP_BUILD_RTSAFETY)
     VERBATIM
   )
   add_dependencies(rt_safety_check talos_rt)
-  add_custom_target(check)
-  add_dependencies(check rt_safety_check)
+
 endif()
 
 # ---- application ----
@@ -98,7 +111,7 @@ add_executable(talosdsp
   src/audio/AudioEngine.cpp
 )
 target_include_directories(talosdsp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(talosdsp PRIVATE talos_rt portaudio_static)
+target_link_libraries(talosdsp PRIVATE talos_rt talos_control portaudio_static)
 
 # ---- tests ----
 if(TALOSDSP_BUILD_TESTS)
@@ -117,14 +130,31 @@ if(TALOSDSP_BUILD_TESTS)
     tests/test_freeverb.cpp
     tests/test_limiter.cpp
     tests/test_mixer.cpp
+    tests/test_regressions.cpp
     tests/test_chain.cpp
   )
   target_include_directories(talosdsp_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-  target_link_libraries(talosdsp_tests PRIVATE talos_rt Catch2::Catch2WithMain)
+  target_link_libraries(talosdsp_tests PRIVATE talos_rt talos_control Catch2::Catch2WithMain)
 
   include(CTest)
   if(BUILD_TESTING)
     include(Catch)
     catch_discover_tests(talosdsp_tests)
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    add_test(NAME cli_validation
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_cli.py $<TARGET_FILE:talosdsp>)
+    add_test(NAME rt_symbol_parser
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_rt_symbol_check.py)
   endif()
+endif()
+add_custom_target(check)
+if(TALOSDSP_BUILD_RTSAFETY)
+  add_dependencies(check rt_safety_check)
+endif()
+if(TALOSDSP_BUILD_TESTS AND BUILD_TESTING)
+  add_custom_target(unit_check
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+    DEPENDS talosdsp_tests talosdsp
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+  add_dependencies(check unit_check)
 endif()

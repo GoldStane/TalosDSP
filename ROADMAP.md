@@ -30,14 +30,14 @@ Goal: the full sequential signal chain, each stage independently testable offlin
 - [x] Offline unit tests: known impulse responses / reference outputs per stage
 - [ ] Stretch: partitioned convolution reverb (SIMD showcase)
 
-**Exit criteria:** full chain runs in the Phase 0 callback with measured per-stage cost, still glitch-free. (Verified: indefinite run with 'q' or Ctrl+C to stop, 0 steady-state xruns; per-stage cost < 62 µs.)
+**Exit criteria:** full chain runs in the callback with measured per-stage cost, still glitch-free. Repeat live verification after the control-plane changes; historical runs do not establish current latency.
 
 ## Phase 2 — Control Plane
 
 Goal: the watchdog loop and the lock-free channel it needs.
 
-- [ ] `g_complexity_level` atomic + watchdog thread (100 ms poll, P99-based up/down adjustment)
-- [ ] Wire complexity level into stage parameters (tap count, filter order) so degradation is real, not cosmetic
+- [x] Complexity atomic + watchdog thread (100 ms poll, P99-based up/down adjustment)
+- [x] Wire complexity into active reverb comb count; preset parameters remain independent
 - [ ] Lock-free SPSC ring buffer: RT thread writes a per-block audio snapshot, drop-on-full, never blocks
 - [ ] Synthetic load test: artificially slow a stage, verify watchdog reacts within the expected number of polls
 
@@ -47,9 +47,9 @@ Goal: the watchdog loop and the lock-free channel it needs.
 
 Goal: on-device audio content classification driving preset selection.
 
-- [ ] Feature extraction: RMS, zero-crossing rate, 4-band energy (biquad filterbank)
-- [ ] Hardcoded decision tree (percussive / tonal / ambient) as the baseline
-- [ ] `g_preset_id` atomic feeds Stage 2 parameter selection in the RT thread
+- [x] Feature extraction: RMS, zero-crossing rate, 4-band energy (biquad filterbank)
+- [x] Hardcoded decision tree (percussive / tonal / ambient) as the baseline
+- [x] Per-chain preset atomic feeds parameter selection in the RT thread
 - [ ] Stretch: tiny offline-trained model (Python/PyTorch), weights exported to a plain C array, hand-written inference in C++ (no runtime ML framework dependency)
 - [ ] Labeled test set + offline accuracy report for the classifier
 
@@ -82,3 +82,7 @@ Goal: portfolio-ready presentation.
 - Cross-platform mobile builds (iOS/Android)
 - A GUI/plugin (VST/AU) wrapper — may become a future phase once the core is stable
 - Multi-channel/surround support beyond stereo
+
+## Correctness follow-up
+
+See [IMPROVEMENTS.md](IMPROVEMENTS.md) for the ordered plan, acceptance criteria and remaining measurement work after the September 2026 fixes. Feature extraction is currently callback-side; background raw-audio extraction remains pending.

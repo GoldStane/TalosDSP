@@ -32,6 +32,10 @@ std::vector<AudioEngine::DeviceInfo> AudioEngine::listDevices() {
 }
 
 bool AudioEngine::open(Config& config) {
+  if (config.channels < 1 || config.channels > 2 || config.framesPerBuffer == 0 || config.sampleRate < 0) {
+    lastError_ = "expected mono/stereo, positive block size and nonnegative sample rate";
+    return false;
+  }
   if (stream_ != nullptr) {
     lastError_ = "stream already open";
     return false;
@@ -119,7 +123,8 @@ bool AudioEngine::open(Config& config) {
     output = &outputParams;
   }
 
-    config.sampleRate = sampleRate;
+  chain_.setSampleRate(static_cast<float>(sampleRate));
+  config.sampleRate = sampleRate;
   config_ = config;
   passthrough_.setChannels(static_cast<unsigned int>(config.channels));
 
@@ -139,6 +144,8 @@ bool AudioEngine::start() {
     lastError_ = "stream is not open";
     return false;
   }
+  boostAttempted_ = false;
+  firstCallbackSeen_.store(false, std::memory_order_relaxed);
   const PaError err = Pa_StartStream(stream_);
   if (err != kPaNoError) {
     lastError_ = Pa_GetErrorText(err);
@@ -166,47 +173,4 @@ void AudioEngine::close() {
     lastError_ = Pa_GetErrorText(err);
   }
   stream_ = nullptr;
-}
-
-int AudioEngine::paCallback(const void* input, void* output,
-                            unsigned long frameCount,
-                            const PaStreamCallbackTimeInfo* /*timeInfo*/,
-                            PaStreamCallbackFlags flags, void* userData) {
-  return static_cast<AudioEngine*>(userData)->callbackRun(input, output,
-                                                          frameCount, flags);
-}
-
-int AudioEngine::callbackRun(const void* input, void* output,
-                             unsigned long frameCount,
-                             PaStreamCallbackFlags flags) {
-  static thread_local bool boosted = false;
-  if (!boosted) {
-    boosted = boostCurrentThreadForRt();
-    rtBoostApplied_.store(boosted, std::memory_order_relaxed);
-  }
-
-  if (!firstCallbackSeen_.load(std::memory_order_relaxed)) {
-    firstCallbackSeen_.store(true, std::memory_order_relaxed);
-    firstCallbackAt_ = std::chrono::steady_clock::now();
-  }
-  const bool inStartupGrace =
-      std::chrono::steady_clock::now() - firstCallbackAt_ <
-      std::chrono::milliseconds(config_.startupGraceMs);
-
-  if (config_.useChain) {
-    chain_.process(static_cast<const float*>(input),
-                   static_cast<float*>(output),
-                   static_cast<unsigned int>(frameCount),
-                   static_cast<unsigned int>(config_.channels));
-  } else {
-    passthrough_.process(static_cast<const float*>(input),
-                         static_cast<float*>(output),
-                         static_cast<unsigned int>(frameCount),
-                         static_cast<unsigned int>(config_.channels));
-  }
-
-  xruns_.record((flags & paInputOverflow) != 0, (flags & paOutputUnderflow) != 0,
-                (flags & paInputUnderflow) != 0, (flags & paOutputOverflow) != 0,
-                inStartupGrace);
-  return paContinue;
 }

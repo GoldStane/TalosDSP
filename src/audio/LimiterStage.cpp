@@ -5,13 +5,6 @@
 #include <cstddef>
 
 void LimiterStage::setComplexity(uint8_t level) noexcept {
-  float t = level / 255.0f;
-  // Lookahead: 0.0 ms -> 2.0 ms (linear)
-  // Oversampling: 1x -> 4x (discrete steps: 1,2,3,4)
-  // Knee: tanh (hard, t=0) -> soft knee (t=1, blend)
-  lookahead_ms_ = t * 2.0f;
-  oversampling_ = 1 + int(t * 3.0f);  // 1,2,3,4
-  knee_blend_ = t;  // 0 = tanh (hard), 1 = soft knee
   complexity_ = level;
 }
 

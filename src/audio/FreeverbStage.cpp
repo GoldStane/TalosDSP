@@ -17,7 +17,7 @@ inline int nextIndex(int idx, int len) noexcept {
 
 float FreeverbStage::Model::processChannel(float input) noexcept {
   float out = 0.0f;
-  for (int c = 0; c < kNumCombs; ++c) {
+  for (int c = 0; c < activeCombs; ++c) {
     const int idx = combIdx[c];
     const float delayed = combBuf[c][idx];
     // One-pole low-pass on the feedback path (damping).
@@ -27,7 +27,7 @@ float FreeverbStage::Model::processChannel(float input) noexcept {
     combIdx[c] = nextIndex(idx, combLen[c]);
     out += delayed;
   }
-  out *= 0.25f;  // normalize the 4-comb sum
+  out /= static_cast<float>(activeCombs);  // normalize the 4-comb sum
 
   for (int a = 0; a < kNumAllpass; ++a) {
     const int idx = apIdx[a];
@@ -54,15 +54,7 @@ void FreeverbStage::Model::resetState() noexcept {
 FreeverbStage::FreeverbStage() = default;
 
 void FreeverbStage::setComplexity(uint8_t level) noexcept {
-  float t = level / 255.0f;
-  // Feedback: 0.70 -> 0.95
-  // Damping: 0.40 -> 0.10 (less damping = brighter tail)
-  // Allpass gain: 0.50 -> 0.70
-  for (auto& m : models_) {
-    m.feedback = 0.70f + t * 0.25f;
-    m.damping = 0.40f - t * 0.30f;
-    m.allpassG = 0.50f + t * 0.20f;
-  }
+  for (auto& m : models_) m.activeCombs = 1 + (static_cast<int>(level) * 3 / 255);
   complexity_ = level;
 }
 

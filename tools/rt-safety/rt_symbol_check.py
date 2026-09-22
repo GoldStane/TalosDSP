@@ -40,6 +40,15 @@ FORBIDDEN_PATTERNS = [
 # plain C call (memcpy/memset) or a one-shot scheduling syscall in
 # RtThreadBoost; none of it allocates or blocks on a lock.
 WHITELIST = {
+    "_ZNSt3__16chrono12steady_clock3nowEv",
+    "_ZNSt6chrono3_V212steady_clock3nowEv",
+    "tanf",
+    "pthread_setaffinity_np",
+    "_ZTVN10__cxxabiv117__class_type_infoE",  # Immutable RTTI metadata.
+    "_ZTVN10__cxxabiv120__si_class_type_infoE",
+    "bzero",  # Compiler-generated zero fill on macOS.
+    "__sincosf_stret",  # Apple fused sin/cos math routine.
+    "sincosf",
     "memcpy",
     "memmove",
     "memset",
@@ -98,24 +107,33 @@ def parse_undefined_symbols(object_file: str) -> list[str]:
         print(f"error: nm failed on {object_file}: {result.stderr.strip()}",
               file=sys.stderr)
         sys.exit(2)
+    return parse_nm_output(result.stdout)
+
+
+def normalize(symbol: str) -> str:
+    # Strip exactly the Mach-O decoration, preserving C++/runtime spelling.
+    if sys.platform == "darwin" and symbol.startswith("_"):
+        return symbol[1:]
+    return symbol
+
+
+def parse_nm_output(output: str) -> list[str]:
     symbols = []
-    for line in result.stdout.splitlines():
+    for line in output.splitlines():
         tokens = line.split()
-        # nm forms: "                 U _memcpy" (macOS) / "0000 U memcpy" (GNU)
-        for i, tok in enumerate(tokens):
-            if tok in ("U", "u") and i + 1 < len(tokens):
-                symbol = tokens[i + 1]
-                # Normalize the leading underscore(s) that the platform's
-                # toolchain adds to C symbols. mach-o/ELF prefix one '_';
-                # glibc's stack-protector/fortify can add more ('__stack_chk_fail').
-                # C++ mangled names start with '_Z' (e.g. '_Znwm' for operator
-                # new) and must keep their leading underscore so the forbidden
-                # patterns still match, so leave those alone.
-                if not symbol.startswith("_Z"):
-                    symbol = symbol.lstrip("_")
-                symbols.append(symbol)
-                break
+        if not tokens or line.endswith(":"):
+            continue
+        if len(tokens) == 1:
+            symbols.append(normalize(tokens[0]))
+        elif "U" in tokens or "u" in tokens:
+            symbols.append(normalize(tokens[-1]))
     return symbols
+
+
+def defined_symbols(objects: list[str]) -> set[str]:
+    result = subprocess.run(["nm", "-g", *objects], capture_output=True, text=True, check=True)
+    return {normalize(parts[-1]) for line in result.stdout.splitlines()
+            if len(parts := line.split()) >= 3 and parts[-2] not in ("U", "u")}
 
 
 def check_symbol(symbol: str, object_file: str) -> list[str]:
@@ -149,10 +167,12 @@ def main() -> int:
               file=sys.stderr)
         return 2
 
+    internal = defined_symbols(object_files)
     errors = []
     for obj in object_files:
         for symbol in parse_undefined_symbols(obj):
-            errors.extend(check_symbol(symbol, obj))
+            if symbol not in internal:
+                errors.extend(check_symbol(symbol, obj))
 
     if errors:
         print("rt-safety FAIL: the following symbols are reachable from the "

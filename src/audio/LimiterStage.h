@@ -10,10 +10,7 @@
 // `tanh` is RT-safe (no allocation, no locking); the clamp guarantees the
 // output never exceeds `ceiling_` even on pathological input.
 //
-// Complexity mapping (0-255):
-//   Lookahead: 0.0 ms -> 2.0 ms (linear)
-//   Oversampling: 1x -> 4x (discrete steps)
-//   Knee: tanh (hard) -> soft knee (linear blend)
+// Lookahead and oversampling are future extensions.
 class LimiterStage : public IDspStage {
  public:
   LimiterStage() = default;
@@ -27,6 +24,9 @@ class LimiterStage : public IDspStage {
   void setComplexity(uint8_t level) noexcept override;
   uint8_t getComplexity() const noexcept override { return complexity_; }
 
+  // Preset setters
+  void setKneeBlend(float k) noexcept { knee_blend_ = k; }
+
   void reset() noexcept override {}
 
   const char* name() const noexcept override { return "Limiter"; }
@@ -39,8 +39,6 @@ class LimiterStage : public IDspStage {
   StageHistogram hist_;
 
   // Complexity-controlled parameters
-  float lookahead_ms_ = 0.0f;
-  int oversampling_ = 1;
   float knee_blend_ = 0.0f;  // 0 = tanh (hard), 1 = soft knee
   uint8_t complexity_{128};
 };

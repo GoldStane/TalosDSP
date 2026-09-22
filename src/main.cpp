@@ -3,6 +3,9 @@
 #include <portaudio.h>
 
 #include <chrono>
+#include <cmath>
+#include <cerrno>
+#include <limits>
 #include <cstdio>
 #include <cstdlib>
 #include <csignal>
@@ -35,6 +38,9 @@ struct Options {
   float pidKp = 0.5f;
   float pidKi = 0.01f;
   float pidKd = 0.1f;
+  // Phase 3: classifier / preset
+  bool classifierEnabled = true;
+  int manualPreset = -1;         // -1 = auto (classifier), 0-2 = manual
 };
 
 void usage(const char* argv0) {
@@ -58,17 +64,20 @@ void usage(const char* argv0) {
       "  --pid-kp N             PID proportional gain (default 0.5)\n"
       "  --pid-ki N             PID integral gain (default 0.01)\n"
       "  --pid-kd N             PID derivative gain (default 0.1)\n"
+      "  --classifier on|off    enable classifier thread (default on)\n"
+      "  --preset N             manual preset 0=percussive 1=tonal 2=ambient (default auto)\n"
       "  --list                 list audio devices and exit\n"
       "  --help                 this message\n"
       "\n"
-      "Press 'q' + Enter to stop. Exit code is 0 on clean stop.\n",
+      "Press 'q' + Enter to stop. Exit code is 0 only with zero steady-state xruns.\n",
       argv0);
 }
 
 bool parseInt(const char* s, int& out) {
   char* end = nullptr;
+  errno = 0;
   const long v = std::strtol(s, &end, 10);
-  if (end == s || *end != '\0') {
+  if (end == s || *end != '\0' || errno == ERANGE || v < std::numeric_limits<int>::min() || v > std::numeric_limits<int>::max()) {
     return false;
   }
   out = static_cast<int>(v);
@@ -77,8 +86,9 @@ bool parseInt(const char* s, int& out) {
 
 bool parseFloat(const char* s, float& out) {
   char* end = nullptr;
+  errno = 0;
   const float v = std::strtof(s, &end);
-  if (end == s || *end != '\0') {
+  if (end == s || *end != '\0' || errno == ERANGE || !std::isfinite(v)) {
     return false;
   }
   out = v;
@@ -115,7 +125,7 @@ bool parseOptions(int argc, char** argv, Options& opts, bool& listOnly) {
         return false;
       }
     } else if (arg == "--channels" && i + 1 < argc) {
-      if (!parseInt(argv[++i], opts.channels) || opts.channels <= 0) {
+      if (!parseInt(argv[++i], opts.channels) || opts.channels <= 0 || opts.channels > 2) {
         return false;
       }
     } else if (arg == "--status-interval" && i + 1 < argc) {
@@ -124,13 +134,17 @@ bool parseOptions(int argc, char** argv, Options& opts, bool& listOnly) {
         return false;
       }
     } else if (arg == "--chain" && i + 1 < argc) {
-      opts.useChain = (std::string(argv[++i]) != "none");
+      const std::string value = argv[++i];
+      if (value != "full" && value != "none") return false;
+      opts.useChain = value == "full";
     } else if (arg == "--wet" && i + 1 < argc) {
-      if (!parseFloat(argv[++i], opts.wet)) {
+      if (!parseFloat(argv[++i], opts.wet) || opts.wet < 0 || opts.wet > 1) {
         return false;
       }
     } else if (arg == "--watchdog" && i + 1 < argc) {
-      opts.watchdogEnabled = (std::string(argv[++i]) != "off");
+      const std::string value = argv[++i];
+      if (value != "on" && value != "off") return false;
+      opts.watchdogEnabled = value == "on";
     } else if (arg == "--complexity" && i + 1 < argc) {
       if (!parseInt(argv[++i], opts.manualComplexity) ||
           opts.manualComplexity < 0 || opts.manualComplexity > 255) {
@@ -142,6 +156,15 @@ bool parseOptions(int argc, char** argv, Options& opts, bool& listOnly) {
       if (!parseFloat(argv[++i], opts.pidKi)) return false;
     } else if (arg == "--pid-kd" && i + 1 < argc) {
       if (!parseFloat(argv[++i], opts.pidKd)) return false;
+    } else if (arg == "--classifier" && i + 1 < argc) {
+      const std::string value = argv[++i];
+      if (value != "on" && value != "off") return false;
+      opts.classifierEnabled = value == "on";
+    } else if (arg == "--preset" && i + 1 < argc) {
+      if (!parseInt(argv[++i], opts.manualPreset) ||
+          opts.manualPreset < 0 || opts.manualPreset > 2) {
+        return false;
+      }
     } else {
       return false;
     }
@@ -214,14 +237,6 @@ int main(int argc, char** argv) {
       static_cast<double>(config.framesPerBuffer) / config.sampleRate * 1000.0,
       config.channels);
 
-  if (!engine.start()) {
-    std::fprintf(stderr, "Failed to start stream: %s\n",
-                 engine.lastError().c_str());
-    engine.close();
-    Pa_Terminate();
-    return 1;
-  }
-
   // Phase 2: Watchdog / complexity setup
   if (opts.useChain) {
     if (opts.manualComplexity >= 0) {
@@ -232,6 +247,23 @@ int main(int argc, char** argv) {
       engine.chain().setWatchdogEnabled(true);
       engine.chain().startWatchdog();
     }
+
+    // Phase 3: Classifier / preset setup
+    if (opts.manualPreset >= 0) {
+      engine.chain().setManualPreset(static_cast<uint8_t>(opts.manualPreset));
+      engine.chain().setClassifierEnabled(false);
+    } else if (opts.classifierEnabled) {
+      engine.chain().setClassifierEnabled(true);
+      engine.chain().startClassifier();
+    }
+  }
+
+  if (!engine.start()) {
+    std::fprintf(stderr, "Failed to start stream: %s\n",
+                 engine.lastError().c_str());
+    engine.close();
+    Pa_Terminate();
+    return 1;
   }
 
   // Install signal handlers for graceful shutdown
@@ -285,10 +317,11 @@ int main(int argc, char** argv) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 
+  engine.stop();
   if (opts.useChain) {
+    engine.chain().stopClassifier();
     engine.chain().stopWatchdog();
   }
-  engine.stop();
   engine.close();
 
   const auto elapsedSec = std::chrono::duration_cast<std::chrono::seconds>(clock::now() - start).count();
@@ -318,5 +351,5 @@ int main(int argc, char** argv) {
   std::fflush(stdout);
 
   Pa_Terminate();
-  return 0;
+  return steady == 0 ? 0 : 1;
 }

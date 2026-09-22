@@ -1,5 +1,6 @@
 #pragma once
 
+#include "audio/SPSCRingBuffer.h"
 #include <atomic>
 #include <chrono>
 #include <thread>
@@ -17,6 +18,8 @@ class ComplexityController {
     float prev_error_{0.0f};
     std::chrono::steady_clock::time_point last_time_;
 
+    struct Timing { float cost_us; float budget_us; };
+    SPSCRingBuffer<Timing, 4096> timings_;
     uint32_t poll_ms_{100};
     float target_p99_fraction_{0.6f};
 
@@ -38,6 +41,8 @@ public:
     void setPollInterval(uint32_t ms) { poll_ms_ = ms; }
     void setTargetFraction(float frac) { target_p99_fraction_ = frac; }
 
+    void record(float cost, float budget) noexcept { timings_.try_push({cost, budget}); }
+    void poll();
     void update(float current_p99_us, float block_time_us);
 
 private:

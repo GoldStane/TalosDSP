@@ -4,7 +4,6 @@
 #include <cstddef>
 
 void MixerStage::setComplexity(uint8_t level) noexcept {
-  crossfade_mode_ = level / 255.0f;
   complexity_ = level;
 }
 

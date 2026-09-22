@@ -9,15 +9,29 @@ namespace {
 using Clock = std::chrono::steady_clock;
 }  // namespace
 
-DspChain::DspChain() = default;
+
 
 void DspChain::process(const float* input, float* output, uint32_t frames,
                        uint32_t channels) noexcept {
-  std::size_t n = static_cast<std::size_t>(frames) * channels;
-  if (n > kBufElems) {
-    frames = static_cast<uint32_t>(kBufElems / channels);
-    n = static_cast<std::size_t>(frames) * channels;
+  if (!output || !frames || channels == 0 || channels > 2) return;
+  const auto blockStart = Clock::now();
+  const uint32_t originalFrames = frames;
+  while (frames) {
+    const uint32_t count = std::min<uint32_t>(frames, kMaxFrames);
+    processChunk(input, output, count, channels);
+    if (input) input += static_cast<std::size_t>(count) * channels;
+    output += static_cast<std::size_t>(count) * channels;
+    frames -= count;
   }
+  controller_.record(std::chrono::duration<float, std::micro>(Clock::now() - blockStart).count(),
+                     static_cast<float>(originalFrames) / sample_rate_ * 1e6f);
+}
+
+void DspChain::processChunk(const float* input, float* output, uint32_t frames,
+                          uint32_t channels) noexcept {
+
+  // Apply preset params only when preset changes
+  applyPreset();
 
   // Apply current complexity to all stages
   applyComplexity();
@@ -27,7 +41,7 @@ void DspChain::process(const float* input, float* output, uint32_t frames,
   reader_.histogram().record(Clock::now() - t0);
 
   t0 = Clock::now();
-  reverb_.process(input, wetBuf_.data(), frames, channels);
+  reverb_.process(dryBuf_.data(), wetBuf_.data(), frames, channels);
   reverb_.histogram().record(Clock::now() - t0);
 
   t0 = Clock::now();
@@ -39,8 +53,19 @@ void DspChain::process(const float* input, float* output, uint32_t frames,
   limiter_.histogram().record(Clock::now() - t0);
 
   // Compute and push snapshot for watchdog
-  FrameSnapshot snap = computeSnapshot(input, output, frames, channels);
+  FrameSnapshot snap = computeSnapshot(output, frames, channels);
   snapshot_queue_.try_push(snap);
+
+  // Accumulate features for classifier
+  if (classifier_enabled_) {
+    for (uint32_t offset = 0; offset < frames;) {
+      const uint32_t count = std::min(frames - offset,
+          feature_extractor_.windowFrames() - feature_extractor_.framesAccumulated());
+      feature_extractor_.process(dryBuf_.data() + offset * channels, count, channels);
+      maybePushFeatures();
+      offset += count;
+    }
+  }
 }
 
 void DspChain::reset() noexcept {
@@ -48,6 +73,7 @@ void DspChain::reset() noexcept {
   reverb_.reset();
   mixer_.reset();
   limiter_.reset();
+  feature_extractor_.reset();
 }
 
 void DspChain::applyComplexity() noexcept {
@@ -58,13 +84,28 @@ void DspChain::applyComplexity() noexcept {
   limiter_.setComplexity(c);
 }
 
-FrameSnapshot DspChain::computeSnapshot(const float* input, const float* output,
+void DspChain::applyPreset() noexcept {
+  uint8_t preset = g_preset_id_.load(std::memory_order_relaxed);
+  if (preset >= static_cast<uint8_t>(Preset::COUNT)) return;
+  if (preset == last_applied_preset_) return;
+  last_applied_preset_ = preset;
+
+  const PresetParams& p = PRESETS[preset];
+  reverb_.setFeedback(p.fb_feedback);
+  reverb_.setDamping(p.fb_damping);
+  reverb_.setAllpassG(p.fb_allpassG);
+
+  limiter_.setKneeBlend(p.lm_knee_blend);
+
+  mixer_.setCrossfadeMode(p.mx_crossfade_mode);
+}
+
+FrameSnapshot DspChain::computeSnapshot(const float* output,
                                         uint32_t frames, uint32_t channels) noexcept {
   FrameSnapshot snap{};
   std::size_t n = static_cast<std::size_t>(frames) * channels;
   if (n == 0) return snap;
 
-  // Compute per-channel RMS, peak, ZCR
   for (uint32_t ch = 0; ch < channels && ch < 2; ++ch) {
     float sum_sq = 0.0f;
     float peak = 0.0f;
@@ -91,7 +132,6 @@ FrameSnapshot DspChain::computeSnapshot(const float* input, const float* output,
     snap.zcr_ch[ch] = zcr / frames_f;
   }
 
-  // Zero out unused channel if mono
   if (channels == 1) {
     snap.rms_ch[1] = 0.0f;
     snap.peak_ch[1] = 0.0f;
@@ -101,23 +141,11 @@ FrameSnapshot DspChain::computeSnapshot(const float* input, const float* output,
   return snap;
 }
 
-void DspChain::setWatchdogEnabled(bool enabled) {
-  watchdog_enabled_ = enabled;
-}
+void DspChain::maybePushFeatures() noexcept {
+  if (!classifier_enabled_) return;
 
-void DspChain::setManualComplexity(uint8_t level) {
-  g_complexity_.store(level, std::memory_order_relaxed);
-  controller_.setManualOverride(true);
-}
-
-void DspChain::setPIDGains(float Kp, float Ki, float Kd) {
-  controller_.setGains(Kp, Ki, Kd);
-}
-
-void DspChain::startWatchdog() {
-  controller_.start();
-}
-
-void DspChain::stopWatchdog() {
-  controller_.stop();
+  AudioFeatures features;
+  if (feature_extractor_.finalize(features)) {
+    feature_queue_.try_push(features);
+  }
 }

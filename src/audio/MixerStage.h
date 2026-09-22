@@ -31,6 +31,9 @@ class MixerStage : public IDspStage {
   void setComplexity(uint8_t level) noexcept override;
   uint8_t getComplexity() const noexcept override { return complexity_; }
 
+  // Preset setter
+  void setCrossfadeMode(float m) noexcept { crossfade_mode_ = m; }
+
   void reset() noexcept override {}
 
   const char* name() const noexcept override { return "Mixer"; }

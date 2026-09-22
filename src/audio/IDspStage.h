@@ -16,7 +16,10 @@
 // allocate, lock, or block in any method reachable from the audio callback.
 class IDspStage {
  public:
-  virtual ~IDspStage() = default;
+  // Stages are owned by value; deletion through the interface is unsupported.
+ protected:
+  ~IDspStage() = default;
+ public:
 
   virtual void process(const float* input, float* output, uint32_t frames,
                        uint32_t channels) noexcept = 0;

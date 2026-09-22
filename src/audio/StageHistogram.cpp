@@ -5,7 +5,7 @@
 std::uint64_t StageHistogram::medianNs() const noexcept {
   const std::uint64_t total = total_.load(std::memory_order_relaxed);
   if (total == 0) return 0;
-  const std::uint64_t target = total / 2;
+  const std::uint64_t target = (total + 1) / 2;
   std::uint64_t cumulative = 0;
   for (std::size_t i = 0; i < kNumBuckets; ++i) {
     cumulative += buckets_[i].load(std::memory_order_relaxed);

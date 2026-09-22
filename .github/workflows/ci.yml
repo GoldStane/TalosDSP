@@ -60,6 +60,6 @@ jobs:
 
       - name: Run clang-tidy
         run: |
-          cmake --build build -j --target talos_rt talosdsp_passthrough talosdsp_tests
+          cmake --build build -j --target talos_rt talosdsp talosdsp_tests
           run-clang-tidy -p build -header-filter='^.*/src/.*' -quiet \
             src/main.cpp src/audio/
