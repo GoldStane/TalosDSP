@@ -1,6 +1,7 @@
 #pragma once
 
 #include "audio/IDspStage.h"
+#include "audio/LinearRamp.h"
 #include "audio/StageHistogram.h"
 
 #include <cstdint>
@@ -9,8 +10,7 @@
 // output. The chain calls mix(dry, wet, out, ...); process(in, out, ...) is the
 // IDspStage adaptation (wet == dry) used for uniform testing.
 //
-// Complexity mapping (0-255):
-//   Crossfade curve: linear (t=0) -> equal-power cosine (t=1)
+// Preset crossfade curve: linear (0) -> equal-power (1), smoothed over 10 ms.
 class MixerStage : public IDspStage {
  public:
   MixerStage() = default;
@@ -34,13 +34,17 @@ class MixerStage : public IDspStage {
   // Preset setter
   void setCrossfadeMode(float m) noexcept { crossfade_mode_ = m; }
 
-  void reset() noexcept override {}
+  void reset() noexcept override { primed_=false; }
+  void setSampleRate(float rate) noexcept { rampFrames_=static_cast<uint32_t>(rate*.01f); }
 
   const char* name() const noexcept override { return "Mixer"; }
 
   StageHistogram& histogram() noexcept override { return hist_; }
 
  private:
+  LinearRamp dryGain_{.5f}, wetGain_{.5f};
+  bool primed_{false};
+  uint32_t rampFrames_{480};
   float wetAmount_ = 0.5f;
   StageHistogram hist_;
   float crossfade_mode_{0.0f};  // 0 = linear, 1 = equal-power

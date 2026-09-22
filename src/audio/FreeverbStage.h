@@ -1,6 +1,7 @@
 #pragma once
 
 #include "audio/IDspStage.h"
+#include "audio/LinearRamp.h"
 #include "audio/StageHistogram.h"
 
 #include <array>
@@ -30,6 +31,8 @@ class FreeverbStage : public IDspStage {
   void setComplexity(uint8_t level) noexcept override;
   uint8_t getComplexity() const noexcept override { return complexity_; }
 
+  void setSampleRate(float rate) noexcept { for (auto& m : models_) m.rampFrames = static_cast<uint32_t>(rate * .01f); }
+
   // Preset setters
   void setFeedback(float f) noexcept { for (auto& m : models_) m.feedback = f; }
   void setDamping(float d) noexcept { for (auto& m : models_) m.damping = d; }
@@ -51,6 +54,12 @@ class FreeverbStage : public IDspStage {
     std::array<int, kNumAllpass> apIdx{};
 
     int activeCombs = 4;
+    int previousCombs = 4;
+    uint32_t rampFrames = 480;
+    bool primed = false;
+    std::array<LinearRamp, kNumCombs> weights{};
+    std::array<int, kNumCombs> fresh{};
+    LinearRamp feedbackRamp{.84f}, dampingRamp{.2f}, allpassRamp{.6f};
     float feedback = 0.84f;
     float damping = 0.2f;
     float allpassG = 0.6f;

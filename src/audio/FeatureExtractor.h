@@ -37,7 +37,7 @@ class FeatureExtractor {
   void init(float sample_rate, uint32_t window_frames = 1024) noexcept;
 
   // Process interleaved audio block, accumulate features
-  // Call once per audio callback block; call finalize() after N frames
+  // Consumer thread only; FeatureStream assembles exact windows.
   void process(const float* input, uint32_t frames, uint32_t channels) noexcept;
 
   // Finalize and compute features from accumulated data

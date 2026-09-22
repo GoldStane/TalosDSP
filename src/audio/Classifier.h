@@ -1,6 +1,6 @@
 #pragma once
 
-#include "audio/FeatureExtractor.h"
+#include "audio/FeatureStream.h"
 #include "audio/SPSCRingBuffer.h"
 
 #include <atomic>
@@ -37,7 +37,7 @@ constexpr PresetParams PRESETS[static_cast<size_t>(Preset::COUNT)] = {
 };
 
 class Classifier {
-  SPSCRingBuffer<AudioFeatures, 64>* feature_queue_;
+  AudioQueue* audio_queue_;
   std::atomic<uint8_t>* preset_;
   std::atomic<bool> running_{false};
   std::atomic<bool> manual_override_{false};
@@ -45,19 +45,15 @@ class Classifier {
   uint32_t poll_ms_ = 50;
 
 public:
-  Classifier(SPSCRingBuffer<AudioFeatures, 64>* queue, std::atomic<uint8_t>* preset) noexcept
-      : feature_queue_(queue), preset_(preset) {}
+  Classifier(AudioQueue* queue, std::atomic<uint8_t>* preset) noexcept
+      : audio_queue_(queue), preset_(preset) {}
 
   ~Classifier() { stop(); }
 
   Classifier(const Classifier&) = delete;
   Classifier& operator=(const Classifier&) = delete;
 
-  void start() {
-    if (running_.exchange(true, std::memory_order_acq_rel)) return;
-    thread_ = std::thread(&Classifier::run, this);
-  }
-
+  void start();
   void stop() {
     if (!running_.exchange(false, std::memory_order_acq_rel)) return;
     if (thread_.joinable()) thread_.join();
@@ -70,7 +66,15 @@ public:
     }
   }
 
-private:
-  void run();
+  // poll/reset require a stopped worker (or its own thread).
+  void poll();
+  uint64_t windows() const noexcept { return windows_.load(); }
+  uint64_t gaps() const noexcept { return gaps_.load(); }
   static uint8_t classify(const AudioFeatures& f) noexcept;
+ private:
+  void run();
+  FeatureStream stream_;
+  std::atomic<uint64_t> windows_{0}, gaps_{0};
+  uint8_t candidate_{255};
+  unsigned streak_{0};
 };

@@ -4,6 +4,6 @@ import sys
 for args in [('--wet', 'nan'), ('--wet', 'inf'), ('--wet', '2'),
              ('--channels', '3'), ('--blocksize', '999999999999999999999'),
              ('--chain', 'typo'), ('--watchdog', 'typo'), ('--classifier', 'typo'),
-             ('--pid-kp', 'nan')]:
+             ('--pid-kp', 'nan'), ('--pid-kp', '3'), ('--duration', '-1'), ('--duration', 'nan'), ('--sr', '4000')]:
     result = subprocess.run([sys.argv[1], *args], capture_output=True, timeout=5)
     assert result.returncode == 2, (args, result.returncode, result.stderr)

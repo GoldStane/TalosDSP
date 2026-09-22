@@ -1,0 +1,207 @@
+{
+  "synthetic_only": true,
+  "class_order": [
+    "percussive",
+    "tonal",
+    "ambient"
+  ],
+  "confusion_rows_true_columns_predicted": {
+    "44100": [
+      [
+        5,
+        0,
+        0
+      ],
+      [
+        0,
+        5,
+        0
+      ],
+      [
+        0,
+        0,
+        5
+      ]
+    ],
+    "48000": [
+      [
+        5,
+        0,
+        0
+      ],
+      [
+        0,
+        5,
+        0
+      ],
+      [
+        0,
+        0,
+        5
+      ]
+    ],
+    "96000": [
+      [
+        5,
+        0,
+        0
+      ],
+      [
+        0,
+        5,
+        0
+      ],
+      [
+        0,
+        0,
+        5
+      ]
+    ]
+  },
+  "stage_cost": [
+    {
+      "combs": 1,
+      "classifier": false,
+      "block": 64,
+      "median_us": 0.542,
+      "p99_us": 0.584,
+      "maximum_us": 1.5,
+      "audio_drops": 0
+    },
+    {
+      "combs": 1,
+      "classifier": false,
+      "block": 256,
+      "median_us": 1.792,
+      "p99_us": 2.042,
+      "maximum_us": 2.167,
+      "audio_drops": 0
+    },
+    {
+      "combs": 1,
+      "classifier": true,
+      "block": 64,
+      "median_us": 0.583,
+      "p99_us": 0.75,
+      "maximum_us": 2.25,
+      "audio_drops": 2025
+    },
+    {
+      "combs": 1,
+      "classifier": true,
+      "block": 256,
+      "median_us": 1.958,
+      "p99_us": 2.083,
+      "maximum_us": 9.542,
+      "audio_drops": 1990
+    },
+    {
+      "combs": 2,
+      "classifier": false,
+      "block": 64,
+      "median_us": 0.792,
+      "p99_us": 0.917,
+      "maximum_us": 6.459,
+      "audio_drops": 0
+    },
+    {
+      "combs": 2,
+      "classifier": false,
+      "block": 256,
+      "median_us": 2.375,
+      "p99_us": 2.5,
+      "maximum_us": 12.292,
+      "audio_drops": 0
+    },
+    {
+      "combs": 2,
+      "classifier": true,
+      "block": 64,
+      "median_us": 0.708,
+      "p99_us": 0.75,
+      "maximum_us": 0.833,
+      "audio_drops": 2111
+    },
+    {
+      "combs": 2,
+      "classifier": true,
+      "block": 256,
+      "median_us": 3.0,
+      "p99_us": 3.167,
+      "maximum_us": 10.209,
+      "audio_drops": 1990
+    },
+    {
+      "combs": 3,
+      "classifier": false,
+      "block": 64,
+      "median_us": 1.25,
+      "p99_us": 1.375,
+      "maximum_us": 12.917,
+      "audio_drops": 0
+    },
+    {
+      "combs": 3,
+      "classifier": false,
+      "block": 256,
+      "median_us": 3.458,
+      "p99_us": 3.667,
+      "maximum_us": 10.25,
+      "audio_drops": 0
+    },
+    {
+      "combs": 3,
+      "classifier": true,
+      "block": 64,
+      "median_us": 0.959,
+      "p99_us": 1.083,
+      "maximum_us": 2.125,
+      "audio_drops": 2221
+    },
+    {
+      "combs": 3,
+      "classifier": true,
+      "block": 256,
+      "median_us": 3.625,
+      "p99_us": 4.125,
+      "maximum_us": 6.167,
+      "audio_drops": 1990
+    },
+    {
+      "combs": 4,
+      "classifier": false,
+      "block": 64,
+      "median_us": 1.5,
+      "p99_us": 1.667,
+      "maximum_us": 11.791,
+      "audio_drops": 0
+    },
+    {
+      "combs": 4,
+      "classifier": false,
+      "block": 256,
+      "median_us": 3.792,
+      "p99_us": 4.459,
+      "maximum_us": 22.333,
+      "audio_drops": 0
+    },
+    {
+      "combs": 4,
+      "classifier": true,
+      "block": 64,
+      "median_us": 1.042,
+      "p99_us": 1.167,
+      "maximum_us": 1.292,
+      "audio_drops": 2235
+    },
+    {
+      "combs": 4,
+      "classifier": true,
+      "block": 256,
+      "median_us": 4.291,
+      "p99_us": 5.083,
+      "maximum_us": 19.708,
+      "audio_drops": 2245
+    }
+  ]
+}

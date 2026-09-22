@@ -13,9 +13,9 @@ C++17 · MIT licensed · target end-to-end latency **< 5 ms**
 TalosDSP takes microphone input, runs it through a cascade of DSP stages (delay/reverb → adaptive preset → limiter/mixer), and outputs it in real time. Two background threads make it *adaptive*:
 
 - **Watchdog** — polls per-block timing telemetry and dials DSP complexity up or down to hold a P99 latency budget under load.
-- **Classifier** — consumes lightweight audio features (RMS, zero-crossing rate, 4-band energy) every 50 ms, runs them through an on-device decision tree (or a tiny hand-exported model), and switches effect presets based on whether the input is percussive, tonal, or ambient.
+- **Classifier** — consumes audio chunks every 50 ms, extracts features (RMS, zero-crossing rate, 4-band energy), runs them through an on-device decision tree (or a tiny hand-exported model), and switches effect presets based on whether the input is percussive, tonal, or ambient.
 
-Controllers communicate through lock-free atomics and bounded SPSC queues. Feature extraction currently runs in the callback only when classification is enabled; moving it off-thread is the first item in [IMPROVEMENTS.md](IMPROVEMENTS.md). Lifecycle/configuration calls require the audio stream to be stopped.
+Controllers communicate through lock-free atomics and bounded SPSC queues. Feature extraction and window assembly run entirely on the classifier thread. The callback only copies bounded audio chunks; drops are counted and sequence gaps reset consumer state. Lifecycle/configuration calls require the audio stream to be stopped.
 
 ## Why "parallel" doesn't mean "one stage per core"
 
@@ -30,13 +30,13 @@ AUDIO THREAD (best-effort platform RT priority) — the ONLY thread touching liv
     (sequential, in-place, zero allocation, zero locks, zero queue hops)
     reads:  g_complexity_level, g_preset_id      (atomic, lock-free)
     writes: per-block timing histogram           (atomic)
-    writes: full-block timing and audio features (bounded SPSC, drop-on-full)
+    writes: full-block timing and raw audio chunks (bounded SPSC, drop-on-full)
 
 Watchdog thread (100 ms poll)
   reads recent block utilization → P99 PID → adjusts complexity
 
 Classifier thread (50 ms poll)
-  reads feature queue → decision tree
+  reads audio queue → features → decision tree (3-window hysteresis)
   → writes g_preset_id
 ```
 
@@ -53,7 +53,7 @@ One real-time thread owns the entire signal chain sequentially, so the audio pat
 
 The sequential `Reader → Freeverb → Mixer → Limiter` chain, PID watchdog and baseline decision-tree classifier are implemented. Presets control sound parameters; complexity controls active reverb comb count. Feature extraction uses the negotiated stream sample rate and independent stereo filter state. Limiter lookahead and oversampling are not implemented.
 
-Offline tests cover core stages, buffer boundaries, preset behavior, controller response and classifier handoff. Historical live-run notes are not a reproducible benchmark for this version; the **<5 ms latency is a target**, pending the harnesses in `BENCHMARKS.md`. See [IMPROVEMENTS.md](IMPROVEMENTS.md) for the next implementation steps.
+Offline tests cover core stages, buffer boundaries, preset behavior, controller response and classifier handoff. Historical live-run notes are not a reproducible benchmark for this version; the **<5 ms latency is a target**, pending physical loopback measurements using the harness in `BENCHMARKS.md`. See [IMPROVEMENTS.md](IMPROVEMENTS.md) for implementation status and remaining validation.
 
 ## Building
 
@@ -64,7 +64,7 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
-Requires a C++17 compiler and PortAudio (fetched automatically via CMake `FetchContent`).
+Requires a C++17 compiler and PortAudio (discovered through CMake/pkg-config when installed, otherwise fetched through `FetchContent`).
 
 Validate the passthrough (exit code 0 iff zero steady-state xruns):
 
@@ -81,7 +81,24 @@ Run the full DSP chain (default) or fall back to plain passthrough:
 ./build/talosdsp --chain none     # Phase 0 passthrough regression
 ```
 
-Press 'q' + Enter to stop. At the end of a `--chain full` run, per-stage median/P99 cost (RT-thread, `steady_clock`) is printed.
+Use `--duration 30` for a timed noninteractive run, or press 'q' + Enter to stop. At the end of a `--chain full` run, per-stage median/P99 cost (RT-thread, `steady_clock`) is printed.
+
+## Validation and benchmarks
+
+```sh
+python3 bench/run.py                       # builds, tests, writes raw CSV/JSON and labeled WAV clips
+cmake -B build-asan -DTALOSDSP_SANITIZE=ON -DTALOSDSP_BUILD_RTSAFETY=OFF
+cmake --build build-asan --target check
+cmake -B build-tsan -DTALOSDSP_THREAD_SANITIZE=ON -DTALOSDSP_BUILD_RTSAFETY=OFF
+cmake --build build-tsan
+ctest --test-dir build-tsan -R 'SPSC|Classifier.lifecycle' --output-on-failure
+```
+
+Preset changes use 10 ms parameter ramps. Complexity fades comb contributions over the same interval; reenabled combs overwrite their delay before reading it, preventing frozen tails from returning. Silence holds the current preset; a new class must persist for three feature windows.
+
+The watchdog uses normalized deadline utilization with fixed 100 ms PID steps, bounded integral and gains, maximum 32-level decrements, and at most four levels of recovery after ten consecutive polls with >10% spare headroom relative to its target. Reported P99/P999 values describe the most recent poll window; zero samples means no current telemetry. Full-block/stage histograms use 1 µs buckets, with explicit overflow and maximum values. Quantiles landing in the overflow bucket are lower bounds.
+
+CI remains manual-only under the existing repository policy. It now includes Linux ThreadSanitizer and archived offline benchmark artifacts.
 
 ## License
 

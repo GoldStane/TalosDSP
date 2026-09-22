@@ -6,30 +6,43 @@
 
 
 
-void Classifier::run() {
-  using namespace std::chrono;
+void Classifier::start() {
+  if (running_.load()) return;
+  AudioChunk stale;
+  while (audio_queue_->try_pop(stale)) {}
+  stream_.reset(); candidate_ = 255; streak_ = 0;
+  windows_.store(0); gaps_.store(0);
+  running_.store(true);
+  try { thread_ = std::thread(&Classifier::run, this); }
+  catch (...) { running_.store(false); throw; }
+}
+
+void Classifier::poll() {
+  AudioChunk chunk;
   AudioFeatures features;
-  steady_clock::time_point last_process = steady_clock::now();
-
-  while (running_.load(std::memory_order_relaxed)) {
-    // Buffer multiple windows - drain queue, keep latest
-    bool got_features = false;
-    while (feature_queue_->try_pop(features)) {
-      got_features = true;
+  // Bounded batch even if producer keeps filling the queue.
+  for (std::size_t i = 0; i < audio_queue_->capacity() && audio_queue_->try_pop(chunk); ++i) {
+    const auto previousGaps = stream_.gaps();
+    const bool ready = stream_.consume(chunk, features);
+    if (stream_.gaps() != previousGaps) { candidate_ = 255; streak_ = 0; }
+    if (!ready) continue;
+    if (manual_override_.load(std::memory_order_relaxed) || features.rms < 1e-4f) {
+      candidate_ = 255; streak_ = 0; continue; // Silence holds the current preset.
     }
-
-    if (got_features && !manual_override_.load(std::memory_order_relaxed)) {
-      uint8_t preset = classify(features);
-      preset_->store(preset, std::memory_order_relaxed);
-    }
-
-    auto now = steady_clock::now();
-    auto elapsed = duration_cast<milliseconds>(now - last_process);
-    if (elapsed.count() < static_cast<long long>(poll_ms_)) {
-      std::this_thread::sleep_for(milliseconds(poll_ms_) - elapsed);
-    }
-    last_process = steady_clock::now();
+    const uint8_t next = classify(features);
+    if (next != candidate_) { candidate_ = next; streak_ = 0; }
+    if (++streak_ >= 3) { preset_->store(next, std::memory_order_relaxed); streak_ = 3; }
   }
+  windows_.store(stream_.windows(), std::memory_order_relaxed);
+  gaps_.store(stream_.gaps(), std::memory_order_relaxed);
+}
+
+void Classifier::run() {
+  while (running_.load(std::memory_order_relaxed)) {
+    poll();
+    std::this_thread::sleep_for(std::chrono::milliseconds(poll_ms_));
+  }
+  poll(); // Drain the final bounded batch after the producer has stopped.
 }
 
 uint8_t Classifier::classify(const AudioFeatures& f) noexcept {

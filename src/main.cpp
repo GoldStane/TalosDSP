@@ -30,6 +30,7 @@ struct Options {
   int framesPerBuffer = 64;
   int channels = 1;
   int statusIntervalSeconds = 10;
+  float durationSeconds = 0;
   bool useChain = true;          // false => plain passthrough (Phase 0 mode)
   float wet = -1.0f;             // -1 => mixer default (0.5)
   // Phase 2: watchdog / complexity
@@ -66,6 +67,7 @@ void usage(const char* argv0) {
       "  --pid-kd N             PID derivative gain (default 0.1)\n"
       "  --classifier on|off    enable classifier thread (default on)\n"
       "  --preset N             manual preset 0=percussive 1=tonal 2=ambient (default auto)\n"
+      "  --duration N           stop after N seconds (noninteractive)\n"
       "  --list                 list audio devices and exit\n"
       "  --help                 this message\n"
       "\n"
@@ -104,6 +106,8 @@ bool parseOptions(int argc, char** argv, Options& opts, bool& listOnly) {
     } else if (arg == "--help" || arg == "-h") {
       usage(argv[0]);
       std::exit(0);
+    } else if (arg == "--duration" && i + 1 < argc) {
+      if (!parseFloat(argv[++i], opts.durationSeconds) || opts.durationSeconds <= 0) return false;
     } else if (arg == "--device" && i + 1 < argc) {
       if (!parseInt(argv[++i], opts.deviceIndex) || opts.deviceIndex < 0) {
         return false;
@@ -121,7 +125,7 @@ bool parseOptions(int argc, char** argv, Options& opts, bool& listOnly) {
         return false;
       }
     } else if (arg == "--sr" && i + 1 < argc) {
-      if (!parseInt(argv[++i], opts.sampleRate) || opts.sampleRate <= 0) {
+      if (!parseInt(argv[++i], opts.sampleRate) || opts.sampleRate < 8000 || opts.sampleRate > 192000) {
         return false;
       }
     } else if (arg == "--channels" && i + 1 < argc) {
@@ -151,11 +155,11 @@ bool parseOptions(int argc, char** argv, Options& opts, bool& listOnly) {
         return false;
       }
     } else if (arg == "--pid-kp" && i + 1 < argc) {
-      if (!parseFloat(argv[++i], opts.pidKp)) return false;
+      if (!parseFloat(argv[++i], opts.pidKp) || opts.pidKp < 0 || opts.pidKp > 2) return false;
     } else if (arg == "--pid-ki" && i + 1 < argc) {
-      if (!parseFloat(argv[++i], opts.pidKi)) return false;
+      if (!parseFloat(argv[++i], opts.pidKi) || opts.pidKi < 0 || opts.pidKi > 2) return false;
     } else if (arg == "--pid-kd" && i + 1 < argc) {
-      if (!parseFloat(argv[++i], opts.pidKd)) return false;
+      if (!parseFloat(argv[++i], opts.pidKd) || opts.pidKd < 0 || opts.pidKd > 2) return false;
     } else if (arg == "--classifier" && i + 1 < argc) {
       const std::string value = argv[++i];
       if (value != "on" && value != "off") return false;
@@ -237,6 +241,12 @@ int main(int argc, char** argv) {
       static_cast<double>(config.framesPerBuffer) / config.sampleRate * 1000.0,
       config.channels);
 
+  for (const int device : {config.inputDeviceIndex, config.outputDeviceIndex}) {
+    if (device < 0) continue;
+    const auto* info=Pa_GetDeviceInfo(device);
+    if (info) std::printf("device=%d name=%s backend=%s\n",device,info->name,Pa_GetHostApiInfo(info->hostApi)->name);
+  }
+
   // Phase 2: Watchdog / complexity setup
   if (opts.useChain) {
     if (opts.manualComplexity >= 0) {
@@ -277,6 +287,7 @@ int main(int argc, char** argv) {
   bool stopRequested = false;
 
   while (!stopRequested && !g_stopRequested) {
+    if (opts.durationSeconds > 0 && std::chrono::duration<double>(clock::now()-start).count() >= opts.durationSeconds) break;
     if (clock::now() >= nextStatus) {
       const auto elapsed =
           std::chrono::duration_cast<std::chrono::seconds>(clock::now() - start)
@@ -296,8 +307,21 @@ int main(int argc, char** argv) {
                   static_cast<unsigned long long>(
                       engine.xruns().steadyOutputOverflow()),
                   engine.rtBoostApplied() ? "yes" : "no");
+      if (opts.useChain) {
+        const auto& chain=engine.chain();
+        const auto& timing=chain.controller();
+        std::printf("  block window: n=%u P99=%.2f us P999=%.2f us missed=%llu timing-drops=%llu audio-drops=%llu\n",
+          timing.windowSamples(), timing.p99Us(), timing.p999Us(),
+          static_cast<unsigned long long>(timing.missed()), static_cast<unsigned long long>(timing.drops()),
+          static_cast<unsigned long long>(chain.audioDrops()));
+      }
       nextStatus += std::chrono::seconds(opts.statusIntervalSeconds);
       std::fflush(stdout);
+    }
+
+    if (opts.durationSeconds > 0) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      continue;
     }
 
     // Check for stdin input (press 'q' + Enter to stop)
@@ -343,6 +367,13 @@ int main(int argc, char** argv) {
     };
     std::printf("per-stage cost (RT thread, steady_clock):\n");
     auto& ch = engine.chain();
+    printHist("FullBlock", ch.blockHistogram());
+    std::printf("block maximum=%llu ns overflow=%llu audio-drops=%llu timing-drops=%llu missed=%llu\n",
+      static_cast<unsigned long long>(ch.blockHistogram().maxNs()),
+      static_cast<unsigned long long>(ch.blockHistogram().overflow()),
+      static_cast<unsigned long long>(ch.audioDrops()),
+      static_cast<unsigned long long>(ch.controller().drops()),
+      static_cast<unsigned long long>(ch.controller().missed()));
     printHist("Reader", ch.reader().histogram());
     printHist("Freeverb", ch.reverb().histogram());
     printHist("Mixer", ch.mixer().histogram());

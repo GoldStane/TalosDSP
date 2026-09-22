@@ -48,20 +48,6 @@ TEST_CASE("Watchdog responds to recent timing and honors manual mode") {
   REQUIRE(level.load() == previous);
 }
 
-TEST_CASE("Classifier thread consumes features and writes supplied preset") {
-  SPSCRingBuffer<AudioFeatures, 64> queue;
-  std::atomic<uint8_t> preset{1};
-  Classifier classifier(&queue, &preset);
-  AudioFeatures features; features.zcr = 0.5f; features.centroid = 8000;
-  REQUIRE(queue.try_push(features));
-  classifier.start();
-  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
-  while (preset.load() == 1 && std::chrono::steady_clock::now() < deadline)
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-  classifier.stop();
-  REQUIRE(preset.load() == 0);
-}
-
 TEST_CASE("Feature extractor retains non-aligned block samples") {
   FeatureExtractor f; f.init(48000, 1024);
   std::vector<float> input(1200, 1.0f);
@@ -69,20 +55,6 @@ TEST_CASE("Feature extractor retains non-aligned block samples") {
   REQUIRE(f.framesAccumulated() == 1200);
   AudioFeatures features; REQUIRE(f.finalize(features));
   REQUIRE(features.rms == 1.0f);
-}
-
-TEST_CASE("Chain classifier handoff preserves partial feature windows") {
-  DspChain chain;
-  chain.setSampleRate(44100);
-  chain.startClassifier();
-  std::vector<float> input(1200, 0.0f), output(1200);
-  chain.process(input.data(), output.data(), 1200, 1);
-  REQUIRE(chain.featureExtractor().framesAccumulated() == 176);
-  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
-  while (chain.preset().load() == 1 && std::chrono::steady_clock::now() < deadline)
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-  chain.stopClassifier();
-  REQUIRE(chain.preset().load() == static_cast<uint8_t>(Preset::AMBIENT));
 }
 
 TEST_CASE("LR4 lowpass has half amplitude at crossover") {

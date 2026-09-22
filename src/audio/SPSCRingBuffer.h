@@ -6,6 +6,8 @@
 
 template <typename T, size_t Capacity>
 class SPSCRingBuffer {
+    static_assert(Capacity >= 2, "Capacity must be at least two");
+    static_assert(std::atomic<size_t>::is_always_lock_free, "SPSC indices must be lock-free");
     static_assert((Capacity & (Capacity - 1)) == 0, "Capacity must be power of 2");
     static constexpr size_t Mask = Capacity - 1;
 
@@ -37,11 +39,5 @@ public:
         return (w - r) & Mask;
     }
 
-    size_t capacity() const noexcept { return Capacity; }
-};
-
-struct FrameSnapshot {
-    float rms_ch[2];
-    float peak_ch[2];
-    float zcr_ch[2];
+    size_t capacity() const noexcept { return Capacity - 1; }
 };

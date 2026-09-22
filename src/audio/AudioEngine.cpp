@@ -96,6 +96,11 @@ bool AudioEngine::open(Config& config) {
     sampleRate = static_cast<int>(info->defaultSampleRate);
   }
 
+  if (sampleRate < 8000 || sampleRate > 192000) {
+    lastError_ = "sample rate must be between 8000 and 192000 Hz";
+    return false;
+  }
+
   const double latency =
       config.suggestedLatency > 0.0
           ? config.suggestedLatency
@@ -125,6 +130,8 @@ bool AudioEngine::open(Config& config) {
 
   chain_.setSampleRate(static_cast<float>(sampleRate));
   config.sampleRate = sampleRate;
+  config.inputDeviceIndex = inputDevice;
+  config.outputDeviceIndex = outputDevice;
   config_ = config;
   passthrough_.setChannels(static_cast<unsigned int>(config.channels));
 

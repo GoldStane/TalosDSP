@@ -1,4 +1,6 @@
 #include "audio/DspChain.h"
+#include <algorithm>
+#include <cmath>
 
 DspChain::DspChain() = default;
 DspChain::~DspChain() = default;
@@ -36,7 +38,8 @@ void DspChain::setManualPreset(uint8_t preset) {
 }
 
 void DspChain::startClassifier() {
-  feature_extractor_.init(sample_rate_, 1024);
+  audio_sequence_ = 0;
+  audio_drops_.store(0);
   classifier_.setManualOverride(false);
   classifier_.start();
   classifier_enabled_ = true;
@@ -47,3 +50,8 @@ void DspChain::stopClassifier() {
   classifier_enabled_ = false;
 }
 
+
+void DspChain::setSampleRate(float rate) noexcept {
+  sample_rate_=std::isfinite(rate) ? std::clamp(rate,8000.0f,192000.0f) : 48000.0f;
+  reverb_.setSampleRate(sample_rate_); mixer_.setSampleRate(sample_rate_); limiter_.setSampleRate(sample_rate_);
+}

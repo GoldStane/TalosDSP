@@ -23,7 +23,9 @@ void DspChain::process(const float* input, float* output, uint32_t frames,
     output += static_cast<std::size_t>(count) * channels;
     frames -= count;
   }
-  controller_.record(std::chrono::duration<float, std::micro>(Clock::now() - blockStart).count(),
+  const auto elapsed = Clock::now() - blockStart;
+  block_histogram_.record(elapsed);
+  controller_.record(std::chrono::duration<float, std::micro>(elapsed).count(),
                      static_cast<float>(originalFrames) / sample_rate_ * 1e6f);
 }
 
@@ -52,20 +54,7 @@ void DspChain::processChunk(const float* input, float* output, uint32_t frames,
   limiter_.process(mixBuf_.data(), output, frames, channels);
   limiter_.histogram().record(Clock::now() - t0);
 
-  // Compute and push snapshot for watchdog
-  FrameSnapshot snap = computeSnapshot(output, frames, channels);
-  snapshot_queue_.try_push(snap);
-
-  // Accumulate features for classifier
-  if (classifier_enabled_) {
-    for (uint32_t offset = 0; offset < frames;) {
-      const uint32_t count = std::min(frames - offset,
-          feature_extractor_.windowFrames() - feature_extractor_.framesAccumulated());
-      feature_extractor_.process(dryBuf_.data() + offset * channels, count, channels);
-      maybePushFeatures();
-      offset += count;
-    }
-  }
+  if (classifier_enabled_) pushAudio(frames, channels);
 }
 
 void DspChain::reset() noexcept {
@@ -73,7 +62,7 @@ void DspChain::reset() noexcept {
   reverb_.reset();
   mixer_.reset();
   limiter_.reset();
-  feature_extractor_.reset();
+  last_applied_preset_ = 255;
 }
 
 void DspChain::applyComplexity() noexcept {
@@ -100,52 +89,15 @@ void DspChain::applyPreset() noexcept {
   mixer_.setCrossfadeMode(p.mx_crossfade_mode);
 }
 
-FrameSnapshot DspChain::computeSnapshot(const float* output,
-                                        uint32_t frames, uint32_t channels) noexcept {
-  FrameSnapshot snap{};
-  std::size_t n = static_cast<std::size_t>(frames) * channels;
-  if (n == 0) return snap;
-
-  for (uint32_t ch = 0; ch < channels && ch < 2; ++ch) {
-    float sum_sq = 0.0f;
-    float peak = 0.0f;
-    float zcr = 0.0f;
-    float prev = 0.0f;
-
-    for (uint32_t f = 0; f < frames; ++f) {
-      std::size_t idx = static_cast<std::size_t>(f) * channels + ch;
-      float out = output[idx];
-
-      sum_sq += out * out;
-      float abs_out = std::fabs(out);
-      if (abs_out > peak) peak = abs_out;
-
-      if (f > 0 && ((prev > 0.0f) != (out > 0.0f))) {
-        zcr += 1.0f;
-      }
-      prev = out;
-    }
-
-    float frames_f = static_cast<float>(frames);
-    snap.rms_ch[ch] = std::sqrt(sum_sq / frames_f);
-    snap.peak_ch[ch] = peak;
-    snap.zcr_ch[ch] = zcr / frames_f;
-  }
-
-  if (channels == 1) {
-    snap.rms_ch[1] = 0.0f;
-    snap.peak_ch[1] = 0.0f;
-    snap.zcr_ch[1] = 0.0f;
-  }
-
-  return snap;
-}
-
-void DspChain::maybePushFeatures() noexcept {
-  if (!classifier_enabled_) return;
-
-  AudioFeatures features;
-  if (feature_extractor_.finalize(features)) {
-    feature_queue_.try_push(features);
+void DspChain::pushAudio(uint32_t frames, uint32_t channels) noexcept {
+  for (uint32_t offset = 0; offset < frames;) {
+    const auto count = std::min(frames - offset, AudioChunk::kFrames);
+    audio_chunk_.sequence = audio_sequence_++;
+    audio_chunk_.frames = count;
+    audio_chunk_.channels = channels;
+    audio_chunk_.sampleRate = sample_rate_;
+    std::copy_n(dryBuf_.data() + offset * channels, count * channels, audio_chunk_.samples.data());
+    if (!audio_queue_.try_push(audio_chunk_)) audio_drops_.fetch_add(1, std::memory_order_relaxed);
+    offset += count;
   }
 }

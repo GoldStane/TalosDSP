@@ -1,6 +1,7 @@
 #pragma once
 
 #include "audio/IDspStage.h"
+#include "audio/LinearRamp.h"
 #include "audio/StageHistogram.h"
 
 #include <array>
@@ -27,13 +28,17 @@ class LimiterStage : public IDspStage {
   // Preset setters
   void setKneeBlend(float k) noexcept { knee_blend_ = k; }
 
-  void reset() noexcept override {}
+  void reset() noexcept override { primed_=false; }
+  void setSampleRate(float rate) noexcept { rampFrames_=static_cast<uint32_t>(rate*.01f); }
 
   const char* name() const noexcept override { return "Limiter"; }
 
   StageHistogram& histogram() noexcept override { return hist_; }
 
  private:
+  LinearRamp kneeRamp_;
+  bool primed_{false};
+  uint32_t rampFrames_{480};
   float makeupGain_ = 1.0f;
   float ceiling_ = 1.0f;
   StageHistogram hist_;

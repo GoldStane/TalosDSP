@@ -38,8 +38,8 @@ Goal: the watchdog loop and the lock-free channel it needs.
 
 - [x] Complexity atomic + watchdog thread (100 ms poll, P99-based up/down adjustment)
 - [x] Wire complexity into active reverb comb count; preset parameters remain independent
-- [ ] Lock-free SPSC ring buffer: RT thread writes a per-block audio snapshot, drop-on-full, never blocks
-- [ ] Synthetic load test: artificially slow a stage, verify watchdog reacts within the expected number of polls
+- [x] Bounded SPSC audio chunks: callback copies, classifier extracts; sequence gaps and drops are tracked
+- [x] Synthetic busy-wait load benchmark and deterministic controller response tests
 
 **Exit criteria:** watchdog demonstrably prevents sustained P99 latency breaches under injected load, verified by test, not eyeballing.
 
@@ -51,7 +51,7 @@ Goal: on-device audio content classification driving preset selection.
 - [x] Hardcoded decision tree (percussive / tonal / ambient) as the baseline
 - [x] Per-chain preset atomic feeds parameter selection in the RT thread
 - [ ] Stretch: tiny offline-trained model (Python/PyTorch), weights exported to a plain C array, hand-written inference in C++ (no runtime ML framework dependency)
-- [ ] Labeled test set + offline accuracy report for the classifier
+- [x] Synthetic labeled diagnostic clips + offline confusion matrices (real-world corpus still pending)
 
 **Exit criteria:** classifier switches presets correctly on a labeled test set and never allocates or blocks in its runtime path.
 
@@ -59,10 +59,10 @@ Goal: on-device audio content classification driving preset selection.
 
 Goal: the evidence behind every latency claim in the README.
 
-- [ ] Loopback latency harness: impulse in → detect impulse out → measure round trip
+- [x] Wired/virtual loopback harness and simulated-delay tests (hardware run pending)
 - [ ] P99/P999 jitter histograms under normal and synthetic-load conditions
 - [ ] `BENCHMARKS.md` populated with real numbers, hardware specs, and methodology
-- [ ] Reproducibility: benchmark harness runnable via a single script/CI job
+- [x] Reproducibility: offline benchmarks and optional loopback runnable via bench/run.py and manual CI
 
 **Exit criteria:** `BENCHMARKS.md` numbers are reproducible by a third party from a clean checkout.
 
@@ -85,4 +85,4 @@ Goal: portfolio-ready presentation.
 
 ## Correctness follow-up
 
-See [IMPROVEMENTS.md](IMPROVEMENTS.md) for the ordered plan, acceptance criteria and remaining measurement work after the September 2026 fixes. Feature extraction is currently callback-side; background raw-audio extraction remains pending.
+See [IMPROVEMENTS.md](IMPROVEMENTS.md) for the ordered plan, acceptance criteria and remaining measurement work after the September 2026 fixes. Feature extraction now runs on the classifier thread. See BENCHMARKS.md for offline evidence and explicitly pending hardware measurements.

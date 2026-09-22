@@ -63,3 +63,23 @@ jobs:
           cmake --build build -j --target talos_rt talosdsp talosdsp_tests
           run-clang-tidy -p build -header-filter='^.*/src/.*' -quiet \
             src/main.cpp src/audio/
+  thread-sanitizer:
+    name: ThreadSanitizer lifecycle and queues
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - run: cmake -B build-tsan -DCMAKE_BUILD_TYPE=Debug -DTALOSDSP_THREAD_SANITIZE=ON -DTALOSDSP_BUILD_RTSAFETY=OFF
+      - run: cmake --build build-tsan -j
+      - run: ctest --test-dir build-tsan --output-on-failure -R 'SPSC|Classifier.lifecycle'
+
+  offline-benchmarks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - run: python3 bench/run.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: offline-benchmarks
+          path: build-bench/results/

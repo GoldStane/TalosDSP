@@ -21,20 +21,20 @@
 // keep the whole chain allocation-free on the RT thread.
 //
 // Phase 2 additions:
-// - SPSCRingBuffer for audio snapshots (watchdog/classifier)
+// - Bounded SPSC queues for audio chunks and whole-block timings
 // - ComplexityController (PID watchdog thread)
 // - 0-255 complexity selects one to four active reverb combs
 //
 // Phase 3 additions:
-// - FeatureExtractor (1024-frame window, extracts RMS, ZCR, band energy, centroid, rolloff)
-// - Classifier thread (reads features, writes the per-chain preset atomic)
+// - Classifier-owned feature extraction (1024-frame windows)
+// - Classifier thread (consumes audio chunks, writes the per-chain preset atomic)
 // - Preset system (percussive/tonal/ambient parameter tables)
 class DspChain {
  public:
   DspChain();
   ~DspChain();
   // Lifecycle/configuration methods require the audio stream to be stopped.
-  void setSampleRate(float rate) noexcept { sample_rate_ = rate; }
+  void setSampleRate(float rate) noexcept;
 
   void process(const float* input, float* output, uint32_t frames,
                uint32_t channels) noexcept;
@@ -54,17 +54,15 @@ class DspChain {
   void startClassifier();
   void stopClassifier();
 
-  // Snapshot access for watchdog
-  SPSCRingBuffer<FrameSnapshot, 4096>& snapshotQueue() noexcept { return snapshot_queue_; }
-
-  // Feature queue for classifier
-  SPSCRingBuffer<AudioFeatures, 64>& featureQueue() noexcept { return feature_queue_; }
+  uint64_t audioDrops() const noexcept { return audio_drops_.load(); }
+  const Classifier& classifier() const noexcept { return classifier_; }
+  const ComplexityController& controller() const noexcept { return controller_; }
+  StageHistogram& blockHistogram() noexcept { return block_histogram_; }
 
   PassthroughCallback& reader() noexcept { return reader_; }
   FreeverbStage& reverb() noexcept { return reverb_; }
   MixerStage& mixer() noexcept { return mixer_; }
   LimiterStage& limiter() noexcept { return limiter_; }
-  FeatureExtractor& featureExtractor() noexcept { return feature_extractor_; }
 
   std::atomic<uint8_t>& complexity() noexcept { return g_complexity_; }
   const std::atomic<uint8_t>& complexity() const noexcept { return g_complexity_; }
@@ -88,23 +86,23 @@ class DspChain {
 
   // Phase 2: complexity control
   std::atomic<uint8_t> g_complexity_{128};
-  SPSCRingBuffer<FrameSnapshot, 4096> snapshot_queue_;
+  StageHistogram block_histogram_;
   ComplexityController controller_{&g_complexity_};
   bool watchdog_enabled_{false};
 
   // Phase 3: classifier / preset
   std::atomic<uint8_t> g_preset_id_{static_cast<uint8_t>(Preset::TONAL)};
-  FeatureExtractor feature_extractor_;
-  SPSCRingBuffer<AudioFeatures, 64> feature_queue_;
-  Classifier classifier_{&feature_queue_, &g_preset_id_};
+  AudioQueue audio_queue_;
+  AudioChunk audio_chunk_;
+  uint64_t audio_sequence_{0};
+  std::atomic<uint64_t> audio_drops_{0};
+  Classifier classifier_{&audio_queue_, &g_preset_id_};
   bool classifier_enabled_{false};
   float sample_rate_{48000.0f};
   uint8_t last_applied_preset_{255};
 
-  FrameSnapshot computeSnapshot(const float* output,
-                                uint32_t frames, uint32_t channels) noexcept;
   void processChunk(const float*, float*, uint32_t, uint32_t) noexcept;
   void applyComplexity() noexcept;
   void applyPreset() noexcept;
-  void maybePushFeatures() noexcept;
+  void pushAudio(uint32_t frames, uint32_t channels) noexcept;
 };

@@ -18,10 +18,12 @@ TEST_CASE("Mixer crossfade follows the wet amount") {
   for (float v : out) REQUIRE(v == Catch::Approx(1.0f));
 
   mixer.setWet(1.0f);
+  mixer.reset(); // Reset snaps configuration for this static transfer test.
   mixer.mix(dry.data(), wet.data(), out.data(), frames, 1);
   for (float v : out) REQUIRE(v == Catch::Approx(0.0f));
 
   mixer.setWet(0.25f);
+  mixer.reset();
   mixer.mix(dry.data(), wet.data(), out.data(), frames, 1);
   for (float v : out) REQUIRE(v == Catch::Approx(0.75f));
 }

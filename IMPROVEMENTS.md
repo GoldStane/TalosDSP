@@ -1,6 +1,6 @@
 # Improvement plan
 
-This plan follows the September 2026 correctness fixes. Items below are future work, not claims of measured performance. Complete these in order; each step should land with its own evidence.
+This plan follows the September 2026 correctness fixes. The implementation below is now present. Offline evidence is recorded in BENCHMARKS.md; live loopback and external CI verification are still pending.
 
 ## 1. Move feature extraction to the classifier thread
 
@@ -34,6 +34,14 @@ Build the planned physical/virtual loopback harness and a timed noninteractive r
 
 Acceptance: one documented command reproduces benchmark artifacts from a clean checkout; Linux and macOS CI pass tests, sanitizer builds and positive/negative RT symbol-check fixtures. Only then replace the <5 ms target with a measured claim.
 
+## Implementation evidence
+
+- AudioChunk/FeatureStream move extraction to the consumer and reset on metadata/sequence gaps. Overflow, chunk-boundary equivalence and lifecycle tests pass.
+- Windowed timing, drop/deadline counters, bounded deterministic PID, ten-poll recovery, 1 µs histograms and maximum/overflow reporting are implemented.
+- Ten-millisecond preset ramps and comb fades are implemented; inactive delay contents are overwritten before reuse. Transition and stale-tail regressions pass.
+- DSP reference, SPSC stress, classifier hysteresis/silence and compiled symbol-audit fixtures are covered. The generated 45-clip diagnostic corpus and confusion matrices are reproducible.
+- Offline benchmark runner, optional wired/virtual loopback probe, timed application mode, installed PortAudio discovery, scoped warnings and manual CI jobs are implemented.
+
 ## Current boundaries
 
-Feature extraction still runs in the callback when classification is enabled. Stage timing histograms remain coarse, but the watchdog uses separate recent whole-block timings. Runtime configuration/lifecycle calls require stopped audio, except the atomic manual preset/complexity updates. Live device, Linux and loopback verification must be performed separately from the offline macOS checks.
+The real-world labeled corpus, physical device loopback measurements, and Linux CI execution remain unverified here. CI stays manual-only per repository policy. Lookahead and oversampling remain optional future effects, not silently reintroduced placeholders. Generated clips establish diagnostic behavior only; they do not establish accuracy on real music or speech. No <5 ms end-to-end claim is made. Configuration/lifecycle methods require stopped audio and stopped controller workers; poll/reset helpers must not be called concurrently with their worker.
